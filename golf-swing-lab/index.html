@@ -1016,7 +1016,7 @@ function avgPose(series, i, r = 1) {
 function handCentre(kp) {
   return { x: (kp.lwri.x + kp.rwri.x + kp.lidx.x + kp.ridx.x) / 4, y: (kp.lwri.y + kp.rwri.y + kp.lidx.y + kp.ridx.y) / 4 };
 }
-function findEvents(series, slow, lead) {
+function findEvents(series, slow, lead, slowAuto = false) {
   const n = series.length;
   const fail = (why) => { findEvents.why = why; return null; };
   if (n < 12) return fail("too few frames");
@@ -1052,7 +1052,7 @@ function findEvents(series, slow, lead) {
   // Downswing candidates, steepest first.
   const order = [...dH.keys()].sort((a, b) => dH[a] - dH[b]);
   const steepest = dH[order[0]];
-  let p = -1, top = -1;
+  const cands = [];
   for (const c of order.slice(0, 60)) {
     if (dH[c] > Math.min(-0.5, 0.3 * steepest)) break;   // relative to this clip, so slo-mo still qualifies
     let i = c; while (i > 0 && H[i - 1] >= H[i] - 0.04) i--;
@@ -1065,9 +1065,22 @@ function findEvents(series, slow, lead) {
     // hands fly through and are never still.
     let lowB = tp; for (let j = tp; j >= 0 && within(j, tp, 3, 8); j--) if (H[j] < H[lowB]) lowB = j;
     const stillB = stillNear(Math.min(tp, lowB + 3), 1.2) >= 0;
-    if (follow && stillB && H[tp] - H[lowB] > 0.7) { p = c; top = tp; break; }
+    if (follow && stillB && H[tp] - H[lowB] > 0.7 && !cands.some((x) => x[1] === tp)) cands.push([c, tp]);
   }
-  if (p < 0) return fail("no downswing found");
+  if (!cands.length) return fail("no downswing found");
+  // Try candidates steepest first; keep the first whose timing is a plausible golf swing. A real backswing takes
+  // 1-8x as long as the downswing at any playback speed, so a wrong pick in ramped slo-mo is rejected here.
+  for (const [p, top] of cands) {
+    const r = build(p, top);
+    if (!r) continue;
+    const ratio = r.tempo.back / r.tempo.down, downVideo = r.times.impact - r.times.top;
+    const downOk = slowAuto ? downVideo >= 0.1 && downVideo <= 3.5 : r.tempo.down >= 0.1 && r.tempo.down <= 0.8;
+    if (downOk && (!r.tempo.ok || (ratio >= 1 && ratio <= 8))) return r;
+    findEvents.why = "implausible swing timing";
+  }
+  return null;
+
+  function build(p, top) {
   let peak = top; for (let j = top; j >= 0 && H[j] >= H[top] - 0.08; j--) if (H[j] > H[peak]) peak = j;
   // Sub-frame top: parabola through the hand heights around the top frame.
   let topT = series[top].t;
@@ -1115,7 +1128,7 @@ function findEvents(series, slow, lead) {
   // Impact: after halfway down, hands return to address height (interpolated), 0.12-0.6 s after the top.
   const Haddr = (hipRef - hAddr.y) / torso;
   // Real address hands hang near or below hip height; if the clip starts mid-backswing there is no address.
-  if (top === 0 || rt[take] - rt[0] < 0.1 && take < 3 || Haddr > 0.3) return fail("start of the swing is cut off");
+  if (top === 0 || rt[take] - rt[0] < 0.1 && take < 3 || Haddr > 0.3) { findEvents.why = "start of the swing is cut off"; return null; }
   const target = Haddr + 0.08;
   let impact = -1, impactT = NaN;
   for (let j = Math.max(top + 1, halfDown); j < n; j++) {
@@ -1133,8 +1146,8 @@ function findEvents(series, slow, lead) {
   let finish = -1;
   for (let j = impact; j < n; j++) {
     if (rt[j] - rt[impact] < 0.2) continue;
-    let k = j; while (k < n && bodySpeed[k] < 0.35 && rt[k] - rt[j] < 0.3) k++;
-    if (k < n && rt[k] - rt[j] >= 0.3 && H[j] > 0.2) { finish = j; break; }
+    let k = j; while (k < n && bodySpeed[k] < 0.35 && speed[k] < 0.8 && rt[k] - rt[j] < 0.3) k++;
+    if (k < n && rt[k] - rt[j] >= 0.3 && H[j] > Math.max(0.2, 0.45 * H[top])) { finish = j; break; }
     if (k === n && rt[n - 1] - rt[j] >= 0.15 && bodySpeed[j] < 0.35) { finish = j; break; }
   }
   if (finish < 0) { finish = impact; for (let j = impact; j < n; j++) if (H[j] > H[finish]) finish = j; }
@@ -1149,6 +1162,7 @@ function findEvents(series, slow, lead) {
     hold: { secs: rt[holdEnd] - rt[finish], cut: holdEnd === n - 1, measurable: holdEnd < n - 1 ? tailAfterFinish >= 0.6 || rt[holdEnd] - rt[finish] >= 0.3 : rt[holdEnd] - rt[finish] >= 1.6 },
     downFrames: impact - top, topPeakT: series[peak].t,
   };
+  }
 }
 
 /* ---------- strike sound ----------
@@ -1318,14 +1332,14 @@ async function analyzeClip(file, opts, hooks = {}) {
     const viewGuess = classifyView(raw.filter((f) => f.kp).map((f) => ({ kp: f.kp })), 0, opts.view);
     const series = cleanSeries(raw, fsReal, viewGuess.view);
     const lead = opts.hand === "L" ? "r" : "l";
-    let ev = findEvents(series, opts.slow, lead);
+    let ev = findEvents(series, opts.slow, lead, !!opts.slowAuto);
     // Real downswings take about 0.2-0.45 s, so when the speed was not given, the measured downswing tells us.
     if (ev && opts.slowAuto) {
       const downVideo = ev.times.impact - ev.times.top, real = downVideo / opts.slow;
       let est = opts.slow;
       if (real > 0.6) est = clamp(Math.round(downVideo / 0.3 * 2) / 2, 1.5, 10);
       else if (real < 0.15 && opts.slow > 1) est = Math.max(1, Math.round(downVideo / 0.3 * 2) / 2);
-      if (est !== opts.slow) { opts.slow = est; opts.slowGuessed = est > 1; ev = findEvents(series, opts.slow, lead) || ev; }
+      if (est !== opts.slow) { opts.slow = est; opts.slowGuessed = est > 1; ev = findEvents(series, opts.slow, lead, !!opts.slowAuto) || ev; }
     }
     if (!ev) { console.warn("swing window rejected", a.toFixed(2), b.toFixed(2), findEvents.why); continue; }
     if (!isGolferPose(avgPose(series, ev.idx.address, 2), W, Hpx) || !isGolferPose(avgPose(series, ev.idx.impact, 1), W, Hpx)) {
