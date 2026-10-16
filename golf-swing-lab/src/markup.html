@@ -55,6 +55,8 @@
             <input type="file" id="filePick" accept="video/*" aria-label="Choose a video">
           </label>
         </div>
+        <button class="btn" id="liveBtn" type="button"><svg><use href="#i-sound"/></svg><span id="liveBtnText">Live coach: talks to you after every swing</span></button>
+        <a class="btn" id="liveLink" href="https://aaronb123.github.io/zoom.js/#live" target="_blank" rel="noopener" hidden><svg><use href="#i-sound"/></svg>Live coach (opens on the web, needs the camera)</a>
         <div class="stack" style="gap: 8px;">
           <span class="label">Club</span>
           <div class="chips" id="clubChips" role="group" aria-label="Club"></div>
@@ -123,6 +125,27 @@
           <li>Hold your finish for a couple of seconds.</li>
         </ul>
       </div>
+    </div>
+
+    <div class="panel live" id="live" hidden>
+      <div class="row spread"><h2>Live coach</h2><button class="btn small" id="liveStop">Stop</button></div>
+      <div class="live-stage" id="liveStage">
+        <video id="liveVideo" playsinline muted autoplay></video>
+        <canvas id="liveOverlay"></canvas>
+        <div class="live-status" id="liveStatus" role="status" aria-live="polite">Starting the camera…</div>
+      </div>
+      <div class="stack" style="gap: 6px;">
+        <span class="label">Coach me on</span>
+        <div class="chips" id="liveFocus" role="group" aria-label="Focus"></div>
+      </div>
+      <div class="row">
+        <button class="btn small" id="liveFlip" type="button">Switch camera</button>
+        <button class="btn small" id="liveVoice" type="button" aria-pressed="true">Voice on</button>
+        <span class="note" id="liveFps"></span>
+      </div>
+      <div class="live-result" id="liveResult" hidden></div>
+      <div class="history" id="liveList"></div>
+      <p class="note">Prop the phone at hip height, 3–4 m away, whole body in shot. Settle at address and it says “ready”, then just swing. It talks after every swing. Each swing is recorded so you can run the full, most accurate analysis on it.</p>
     </div>
 
     <div class="panel working" id="working" hidden>
@@ -248,6 +271,14 @@
     <div class="panel">
       <h2>What has changed</h2>
       <div class="table-wrap" id="trendTable"></div>
+    </div>
+    <div class="panel">
+      <div class="row spread"><h2>Move swings between devices</h2></div>
+      <p class="note" id="syncNote">Live-coach swings are saved on the phone that recorded them. Export them here, then Import in Swing Lab inside Claude to add them to your progress.</p>
+      <div class="row">
+        <button class="btn small" id="exportBtn" type="button">Export swings</button>
+        <label class="btn small" style="position: relative;">Import swings<input type="file" id="importFile" accept="application/json,.json" style="position:absolute;inset:0;opacity:0;cursor:pointer"></label>
+      </div>
     </div>
     <div class="panel">
       <h2>Saved swings</h2>
