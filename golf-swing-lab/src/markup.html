@@ -1,0 +1,339 @@
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-swing" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="4.5" r="2"/><path d="M12 7v6l-3 7M12 13l3 7M8 9l4 1 5-5"/><path d="M17 5l3-3"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V4M4 20h16"/><path d="M7 15l4-4 3 3 5-6"/></symbol>
+    <symbol id="i-crew" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.4"/><path d="M3 20c.5-3.5 3-5.5 6-5.5s5.5 2 6 5.5M15 15c2.8-.4 5 1.3 5.6 4.5"/></symbol>
+    <symbol id="i-coach" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/></symbol>
+    <symbol id="i-camera" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3z"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l12-7.5z"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4.5" width="4" height="15" rx="1"/><rect x="14" y="4.5" width="4" height="15" rx="1"/></symbol>
+    <symbol id="i-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></symbol>
+    <symbol id="i-sound" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></symbol>
+    <symbol id="i-share" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 12v7a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-7"/></symbol>
+    <symbol id="i-film" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/></symbol>
+  </defs>
+</svg>
+
+<header class="bar">
+  <div class="bar-in">
+    <div class="brand">
+      <h1>Swing<span>/</span>Lab</h1>
+      <span class="engine" id="engine" data-state="loading"><i></i><span id="engineText">Loading the swing tracker…</span></span>
+    </div>
+    <label class="golfer"><span class="label">Golfer</span><select id="golfer" aria-label="Golfer"></select></label>
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button class="tab" role="tab" data-tab="swing" aria-selected="true">Swing</button>
+      <button class="tab" role="tab" data-tab="progress" aria-selected="false">Progress</button>
+      <button class="tab" role="tab" data-tab="crew" aria-selected="false">Crew</button>
+      <button class="tab" role="tab" data-tab="coach" aria-selected="false">Coach</button>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <!-- SWING -->
+  <section class="view" id="v-swing">
+    <div class="intake" id="intake">
+      <div class="panel hero">
+        <div class="stack" style="gap: 6px;">
+          <span class="label">Film it, drop it in, see what to fix</span>
+          <h2>How did that swing look?</h2>
+        </div>
+        <div class="big-actions">
+          <label class="big primary" id="recBtn">
+            <svg><use href="#i-camera"/></svg>
+            Record a swing
+            <small>Opens your camera</small>
+            <input type="file" id="fileRec" accept="video/*" capture="environment" aria-label="Record a swing">
+          </label>
+          <label class="big" id="pickBtn">
+            <svg><use href="#i-upload"/></svg>
+            Choose a video
+            <small>From your camera roll</small>
+            <input type="file" id="filePick" accept="video/*" aria-label="Choose a video">
+          </label>
+        </div>
+        <div class="stack" style="gap: 8px;">
+          <span class="label">Club</span>
+          <div class="chips" id="clubChips" role="group" aria-label="Club"></div>
+        </div>
+        <details id="moreSettings">
+          <summary class="row spread"><span class="label">Camera, hand and slo-mo</span><span class="note" id="settingsSummary"></span></summary>
+          <div class="settings">
+            <div class="field">
+              <label class="label" for="view">Camera angle</label>
+              <select id="view"><option value="auto">Work it out</option><option value="face">Face-on</option><option value="dtl">Down the line</option></select>
+            </div>
+            <div class="field">
+              <label class="label" for="hand">Plays</label>
+              <select id="hand"><option value="R">Right-handed</option><option value="L">Left-handed</option></select>
+            </div>
+            <div class="field">
+              <label class="label" for="slowmo">Recorded at</label>
+              <select id="slowmo"><option value="0">Work it out</option><option value="1">Normal speed</option><option value="4">Slo-mo 120 fps</option><option value="8">Slo-mo 240 fps</option></select>
+            </div>
+            <div class="field">
+              <label class="label" for="heightCm">Your height (cm)</label>
+              <input type="number" id="heightCm" min="120" max="220" inputmode="numeric" placeholder="178">
+            </div>
+            <div class="field">
+              <label class="label" for="voiceOn">Coach voice</label>
+              <select id="voiceOn"><option value="off">Off</option><option value="on">Read results out</option></select>
+            </div>
+          </div>
+        </details>
+        <p class="note">Your video stays on your phone. Only scores and a few small stills are saved.</p>
+      </div>
+
+      <div class="panel guide">
+        <h2>Film it like this</h2>
+        <div class="guide-art">
+          <figure>
+            <svg viewBox="0 0 160 120" role="img" aria-label="Face-on: phone straight in front of your chest">
+              <line x1="20" y1="30" x2="150" y2="30" stroke="var(--muted)" stroke-dasharray="4 4"/>
+              <text x="150" y="22" text-anchor="end" font-size="9" fill="var(--muted)">target →</text>
+              <circle cx="80" cy="44" r="9" fill="var(--accent)"/>
+              <rect x="70" y="58" width="20" height="6" rx="2" fill="var(--accent)" opacity=".5"/>
+              <circle cx="80" cy="34" r="2.5" fill="var(--ink)"/>
+              <rect x="72" y="96" width="16" height="10" rx="2" fill="var(--flag)"/>
+              <path d="M80 94 L80 66" stroke="var(--flag)" stroke-width="1.5" marker-end="url(#arr)"/>
+              <defs><marker id="arr" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L10 5 L0 10z" fill="var(--flag)"/></marker></defs>
+            </svg>
+            <figcaption><b>Face-on</b>: phone square to your chest</figcaption>
+          </figure>
+          <figure>
+            <svg viewBox="0 0 160 120" role="img" aria-label="Down the line: phone behind your hands pointing at the target">
+              <line x1="20" y1="30" x2="150" y2="30" stroke="var(--muted)" stroke-dasharray="4 4"/>
+              <text x="150" y="22" text-anchor="end" font-size="9" fill="var(--muted)">target →</text>
+              <circle cx="80" cy="50" r="9" fill="var(--accent)"/>
+              <rect x="70" y="64" width="20" height="6" rx="2" fill="var(--accent)" opacity=".5"/>
+              <circle cx="80" cy="34" r="2.5" fill="var(--ink)"/>
+              <rect x="14" y="40" width="10" height="16" rx="2" fill="var(--flag)"/>
+              <path d="M26 46 L66 46" stroke="var(--flag)" stroke-width="1.5" marker-end="url(#arr)"/>
+            </svg>
+            <figcaption><b>Down the line</b>: behind your hands</figcaption>
+          </figure>
+        </div>
+        <ul>
+          <li>Whole body and club in shot, about 3–4 m away, phone at hip height.</li>
+          <li>Use 60 fps or slo-mo if you can. It makes rhythm much more exact.</li>
+          <li>Only you in the frame. At Topgolf, film from the side of your bay.</li>
+          <li>Hold your finish for a couple of seconds.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="panel working" id="working" hidden>
+      <div class="row spread"><h2 id="workTitle">Reading your swing…</h2><span class="num muted" id="workPct">0%</span></div>
+      <div class="preview"><canvas id="previewCanvas" width="320" height="240"></canvas></div>
+      <div class="meter"><i id="workBar"></i></div>
+      <ol class="steps" id="steps">
+        <li data-step="find">Finding each swing in the clip</li>
+        <li data-step="track">Tracking 33 body points, frame by frame</li>
+        <li data-step="score">Measuring and scoring</li>
+      </ol>
+      <p class="note" id="workNote"></p>
+    </div>
+
+    <div id="errorBox" class="err" hidden></div>
+
+    <div id="results" hidden>
+      <div class="view">
+        <div class="row spread">
+          <div class="strip" id="strip" role="group" aria-label="Swings in this clip"></div>
+          <button class="btn small" id="newClip">New swing</button>
+        </div>
+        <div class="report">
+          <div class="panel viewer">
+            <div class="stage" id="stage">
+              <video id="video" playsinline muted preload="auto"></video>
+              <canvas id="overlay"></canvas>
+              <span class="tag" id="phaseTag">Address</span>
+            </div>
+            <div class="scrub"><input type="range" id="scrub" min="0" max="1000" value="0" aria-label="Scrub through the swing"><div class="ticks" id="ticks"></div></div>
+            <div class="controls">
+              <button class="btn small" id="prevF" aria-label="Previous frame">‹ Frame</button>
+              <button class="btn small primary" id="play"><svg><use href="#i-play"/></svg><span>Play</span></button>
+              <button class="btn small" id="nextF" aria-label="Next frame">Frame ›</button>
+              <button class="btn small" id="speed" aria-pressed="true">Slow-mo</button>
+              <button class="btn small" id="lines" aria-pressed="true">Coach lines</button>
+            </div>
+          </div>
+          <div class="readout">
+            <div class="panel">
+              <div class="scorebox">
+                <svg class="ring" viewBox="0 0 120 120" aria-hidden="true">
+                  <circle cx="60" cy="60" r="52" fill="none" stroke="var(--sunk)" stroke-width="10"></circle>
+                  <circle id="ringArc" cx="60" cy="60" r="52" fill="none" stroke="var(--accent)" stroke-width="10" stroke-linecap="round" transform="rotate(-90 60 60)" stroke-dasharray="0 999"></circle>
+                  <text id="ringNum" x="60" y="66" text-anchor="middle" font-size="36">–</text>
+                  <text x="60" y="84" text-anchor="middle" font-size="9" style="fill: var(--muted); font-weight: 600; letter-spacing: .12em;">OUT OF 100</text>
+                </svg>
+                <div>
+                  <span class="label" id="swingMeta"></span>
+                  <div class="level" id="levelName"></div>
+                  <div class="ladder" id="ladder" aria-hidden="true"></div>
+                  <div class="ladder-names" id="ladderNames"></div>
+                </div>
+              </div>
+              <p id="levelLine" class="muted"></p>
+              <div class="quality" id="quality"></div>
+            </div>
+            <div class="panel" style="gap: 8px;">
+              <span class="label">What did the ball do?</span>
+              <div class="chips" id="ballTags" role="group" aria-label="What the ball did"></div>
+              <p class="note" id="ballNote">Tag it and the lab learns which moves cause your misses.</p>
+            </div>
+            <div class="fix" id="fix"></div>
+            <div class="good-card" id="goodCard"></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="row spread"><h2>Swing checks</h2><button class="btn small" id="numbersBtn" aria-pressed="false">Show numbers</button></div>
+          <div class="checks" id="checks"></div>
+        </div>
+        <div class="two">
+          <div class="panel">
+            <h2>Rhythm</h2>
+            <div class="rhythm" id="rhythm"></div>
+          </div>
+          <div class="panel">
+            <h2>Do more with this swing</h2>
+            <div class="actions">
+              <button class="btn primary" id="askCoach"><svg><use href="#i-spark"/></svg>Coach Claude’s take</button>
+              <button class="btn" id="speakBtn"><svg><use href="#i-sound"/></svg>Read it out</button>
+              <button class="btn" id="shareCard"><svg><use href="#i-share"/></svg>Share card</button>
+              <button class="btn" id="shareClip"><svg><use href="#i-film"/></svg>Share clip</button>
+            </div>
+            <div class="coachbox" id="coachOut" hidden></div>
+          </div>
+        </div>
+        <div class="panel">
+          <h2>Key positions</h2>
+          <div class="frames" id="frames"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PROGRESS -->
+  <section class="view" id="v-progress" hidden>
+    <div class="panel goal">
+      <div class="row spread"><h2 id="goalTitle">Road to 90</h2><span class="note" id="storeNote"></span></div>
+      <div class="stats" id="roundStats"></div>
+      <div id="roundChart"></div>
+      <details id="roundFormWrap">
+        <summary class="btn small" style="justify-self: start;">Log a round</summary>
+        <form class="form-grid" id="roundForm" style="margin-top: 12px;">
+          <div class="field"><label class="label" for="rDate">Date</label><input type="date" id="rDate" required></div>
+          <div class="field" style="grid-column: span 2;"><label class="label" for="rCourse">Course</label><input id="rCourse" maxlength="60" placeholder="e.g. Local muni" required></div>
+          <div class="field"><label class="label" for="rHoles">Holes</label><select id="rHoles"><option value="18">18</option><option value="9">9</option></select></div>
+          <div class="field"><label class="label" for="rScore">Score</label><input type="number" id="rScore" min="18" max="200" inputmode="numeric" required></div>
+          <div class="field"><label class="label" for="rRating">Course rating</label><input type="number" id="rRating" step="0.1" min="25" max="80" inputmode="decimal" placeholder="optional"></div>
+          <div class="field"><label class="label" for="rSlope">Slope</label><input type="number" id="rSlope" min="55" max="155" inputmode="numeric" placeholder="optional"></div>
+          <button class="btn primary" type="submit">Save round</button>
+        </form>
+      </details>
+    </div>
+    <div class="panel">
+      <div class="row spread"><h2>Swing score over time</h2><span class="note" id="levelNow"></span></div>
+      <div class="stats" id="stats"></div>
+      <div id="chart"></div>
+    </div>
+    <div class="panel">
+      <h2>Fixed moves</h2>
+      <div id="fixedShelf"></div>
+    </div>
+    <div class="panel">
+      <h2>What has changed</h2>
+      <div class="table-wrap" id="trendTable"></div>
+    </div>
+    <div class="panel">
+      <h2>Saved swings</h2>
+      <div class="history" id="history"></div>
+    </div>
+  </section>
+
+  <!-- CREW -->
+  <section class="view" id="v-crew" hidden>
+    <div class="panel">
+      <h2>Crew leaderboard</h2>
+      <p class="note">Ranked on Form: the average of your last 10 swing scores. One lucky swing does not top the table.</p>
+      <div class="board" id="board"></div>
+    </div>
+    <div class="two">
+      <div class="panel" id="addGuestPanel">
+        <h2>Add a mate</h2>
+        <p class="note">Friends without access can send you their clip. Add them, pick them as Golfer, and analyze it for them.</p>
+        <form class="row" id="guestForm">
+          <div class="field" style="flex: 1 1 150px;"><label class="label" for="guestName">Name</label><input id="guestName" maxlength="40" placeholder="e.g. Jay" required></div>
+          <div class="field"><label class="label" for="guestHand">Plays</label><select id="guestHand"><option value="R">Right</option><option value="L">Left</option></select></div>
+          <button class="btn primary" type="submit" style="align-self: end;">Add</button>
+        </form>
+      </div>
+      <div class="panel">
+        <h2>Your card</h2>
+        <form class="row" id="meForm">
+          <div class="field" style="flex: 1 1 150px;"><label class="label" for="meName">Name on the board</label><input id="meName" maxlength="40" required></div>
+          <button class="btn" type="submit" style="align-self: end;">Save</button>
+        </form>
+        <p class="note" id="crewNote"></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- COACH -->
+  <section class="view" id="v-coach" hidden>
+    <div class="two">
+      <div class="panel">
+        <h2>Ask Coach Claude</h2>
+        <p class="note">Coach Claude can see your recent swings, rounds and lesson notes. Ask anything: why you slice, what to practise this week, how to warm up.</p>
+        <div class="chat" id="chat"></div>
+        <form class="row" id="chatForm">
+          <div class="field" style="flex: 1 1 200px;"><label class="label" for="chatText">Your question</label><input id="chatText" maxlength="400" placeholder="Why do I keep topping the ball?"></div>
+          <button class="btn primary" type="submit" style="align-self: end;">Ask</button>
+        </form>
+      </div>
+      <div class="panel">
+        <h2>This week’s practice</h2>
+        <p class="note">Built from your last 10 swings: the three things costing you the most, with a drill for each.</p>
+        <div class="plan" id="plan"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Your road to breaking 90</h2>
+      <p class="note">Six stages, in the order coaches teach them. A move only counts as fixed after five good swings in a row.</p>
+      <div class="plan" id="roadmap"></div>
+    </div>
+    <div class="panel" id="lessonPanel">
+      <h2>Lesson mode</h2>
+      <p class="note">Got a long video of a lesson or range session? Drop the whole thing in. The lab finds every swing, you tick the ones that are yours, and it shows how you changed from the first swings to the last. Works best on a laptop for videos over 10 minutes.</p>
+      <label class="btn" style="justify-self: start; position: relative;"><svg><use href="#i-upload"/></svg>Choose lesson video<input type="file" id="lessonFile" accept="video/*" style="position:absolute;inset:0;opacity:0;cursor:pointer"></label>
+      <div id="lessonOut"></div>
+    </div>
+    <div class="two">
+      <div class="panel">
+        <h2>Lesson notes</h2>
+        <p class="note">What your coach told you, in their words. Tick a cue once it feels automatic.</p>
+        <form class="row" id="cueForm">
+          <div class="field" style="flex: 1 1 200px;"><label class="label" for="cueText">New cue</label><input id="cueText" maxlength="140" placeholder="e.g. Turn your back to the target"></div>
+          <button class="btn primary" type="submit" style="align-self: end;">Add</button>
+        </form>
+        <div class="cues" id="cues"></div>
+      </div>
+      <div class="panel">
+        <h2>Session notes</h2>
+        <textarea id="notes" placeholder="Lesson 1: grip, posture, ball position…"></textarea>
+        <div class="row spread"><span class="note" id="notesState"></span><button class="btn" id="saveNotes">Save notes</button></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<nav class="dock" role="tablist" aria-label="Sections">
+  <button role="tab" data-tab="swing" aria-selected="true"><svg><use href="#i-swing"/></svg>Swing</button>
+  <button role="tab" data-tab="progress" aria-selected="false"><svg><use href="#i-chart"/></svg>Progress</button>
+  <button role="tab" data-tab="crew" aria-selected="false"><svg><use href="#i-crew"/></svg>Crew</button>
+  <button role="tab" data-tab="coach" aria-selected="false"><svg><use href="#i-coach"/></svg>Coach</button>
+</nav>

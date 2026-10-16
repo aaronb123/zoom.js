@@ -20,8 +20,11 @@ export function createServer() {
     const url = new URL(req.url, "http://x");
     let p = decodeURIComponent(url.pathname);
     if (p === "/") p = "/index.html";
-    const file = path.join(ROOT, path.normalize(p));
-    if (!file.startsWith(ROOT) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.writeHead(404); return res.end("not found"); }
+    // Test switches: SWINGLAB_NO_BIN=1 hides raw .bin files (like the artifact host); SWINGLAB_OVERLAY=<dir> serves extra files.
+    if (process.env.SWINGLAB_NO_BIN && p.endsWith(".bin")) { res.writeHead(404); return res.end("not found"); }
+    let file = path.join(ROOT, path.normalize(p));
+    if (process.env.SWINGLAB_OVERLAY && !fs.existsSync(file)) file = path.join(process.env.SWINGLAB_OVERLAY, path.normalize(p));
+    if ((!file.startsWith(ROOT) && !file.startsWith(process.env.SWINGLAB_OVERLAY || "\0")) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.writeHead(404); return res.end("not found"); }
     const ext = path.extname(file);
     const headers = { "content-type": TYPES[ext] || "application/octet-stream" };
     // SWINGLAB_CSP lets tests mimic the artifact viewer's script restrictions.
