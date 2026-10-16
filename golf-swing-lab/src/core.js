@@ -536,7 +536,14 @@ function findEvents(series, slow, lead, slowAuto = false) {
   }
   // In a real swing the hands always come back to about setup height at impact. A tracking glitch or a
   // relaxed finish never does, so that candidate is not a swing.
-  if (impact < 0) { findEvents.why = "hands never returned to setup height"; return null; }
+  if (impact < 0) {
+    // Hands at impact can sit a little higher than at setup (shaft lean, down-the-line view): accept the lowest
+    // point if it gets within a quarter torso; otherwise this is not a swing.
+    let lo = -1;
+    for (let j = Math.max(top + 1, halfDown); j < n && within(j, top, 1.2, 3); j++) if (lo < 0 || H[j] < H[lo]) lo = j;
+    if (lo < 0 || H[lo] > Haddr + 0.25) { findEvents.why = "hands never returned to setup height"; return null; }
+    impact = lo; impactT = series[lo].t;
+  }
 
   // Finish: the held pose after impact. Take the first still stretch that lasts 0.5 s (real), else the longest;
   // a brief pause while the club is still swinging round does not count. The hold is that stretch.
