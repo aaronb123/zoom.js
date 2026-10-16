@@ -1045,7 +1045,11 @@ function findEvents(series, slow, lead) {
     if (H[tp] < 0.45) continue;
     let lowAfter = c; for (let j = c; j < n && rt[j] - rt[c] <= 0.6; j++) if (H[j] < H[lowAfter]) lowAfter = j;
     let follow = false; for (let j = lowAfter; j < n && rt[j] - rt[lowAfter] <= 2.5; j++) if (H[j] - H[lowAfter] > 0.5 * (H[tp] - H[lowAfter])) { follow = true; break; }
-    if (follow) { p = c; top = tp; break; }
+    // A real swing rises from a still address. A finish being lowered rises from impact, where the hands fly through.
+    let lowB = tp; for (let j = tp; j >= 0 && rt[tp] - rt[j] <= 3; j--) if (H[j] < H[lowB]) lowB = j;
+    const peakDown = Math.max(...speed.slice(tp, Math.min(n, lowAfter + 1)));
+    let stillB = false; for (let j = Math.max(0, lowB - 8); j <= Math.min(tp, lowB + 8); j++) if (speed[j] < Math.max(0.6, 0.12 * peakDown)) { stillB = true; break; }
+    if (follow && stillB && H[tp] - H[lowB] > 0.7) { p = c; top = tp; break; }
   }
   if (p < 0) return fail("no downswing found");
   let peak = top; for (let j = top; j >= 0 && H[j] >= H[top] - 0.08; j--) if (H[j] > H[peak]) peak = j;
@@ -1060,15 +1064,24 @@ function findEvents(series, slow, lead) {
   // and keep going up to the top (rules out waggles and forward presses).
   let lowI = top;
   for (let j = top; j >= 0 && rt[top] - rt[j] <= 3; j--) if (H[j] < H[lowI]) lowI = j;
-  const A0 = series[lowI].kp;
+  // The address is the still period nearest the top on the way back (a forward press before it is ignored).
+  const STILL = 0.55;
+  let stillEnd = -1;
+  for (let j = top - 1; j >= 1; j--) {
+    if (speed[j] < STILL && speed[j - 1] < STILL && H[j] < H[lowI] + 0.35 * (H[top] - H[lowI])) { stillEnd = j; break; }
+    if (rt[top] - rt[j] > 3) break;
+  }
+  if (stillEnd < 0) stillEnd = lowI;
+  const A0 = series[stillEnd].kp;
   const bodyH = Math.max(A0.lank.y, A0.rank.y) - Math.min(A0.nose.y, A0.lear.y, A0.rear.y) || 4 * torso;
-  const addrFrames = []; for (let j = lowI; j >= 0 && rt[lowI] - rt[j] <= 0.3; j--) addrFrames.push(j);
+  const addrFrames = []; for (let j = stillEnd; j >= 0 && rt[stillEnd] - rt[j] <= 0.3 && speed[j] < STILL * 1.5; j--) addrFrames.push(j);
+  if (!addrFrames.length) addrFrames.push(stillEnd);
   const hAddr = { x: median(addrFrames.map((j) => hand[j].x)), y: median(addrFrames.map((j) => hand[j].y)) };
   const thr = 0.03 * bodyH;
   // Takeaway = the last moment the hands were still at their address spot before the top. Scanning back from the
   // top means a forward press or waggle that returns to address is skipped automatically.
   let take = lowI;
-  for (let j = top - 1; j >= Math.max(0, lowI - 1); j--) { if (dist(hand[j], hAddr) <= thr) { take = j; break; } }
+  for (let j = top - 1; j >= Math.max(0, Math.min(lowI, stillEnd) - 1); j--) { if (dist(hand[j], hAddr) <= thr) { take = j; break; } }
   if (rt[top] - rt[take] > 1.8) { for (let j = take; j < top; j++) if (rt[top] - rt[j] <= 1.8) { take = j; break; } }
   const d0 = dist(hand[take], hAddr), d1 = dist(hand[Math.min(take + 1, n - 1)], hAddr);
   const takeT = lerpT(take, Math.min(take + 1, n - 1), (thr - d0) / ((d1 - d0) || 1));
@@ -1222,7 +1235,7 @@ function estimateSlow(coarse, step = 0.12) {
       if (pts[j].H < pts[i].H - 1.0) { fastest = Math.min(fastest, pts[j].t - pts[i].t); break; }
     }
   }
-  if (!Number.isFinite(fastest) || fastest < Math.max(0.5, 2.05 * step)) return 1;   // a drop the coarse grid cannot resolve is real time
+  if (!Number.isFinite(fastest) || fastest < Math.max(0.35, 2.05 * step)) return 1;   // a drop the coarse grid cannot resolve is real time
   return clamp(Math.round(fastest / 0.2 * 2) / 2, 1.5, 10);
 }
 
