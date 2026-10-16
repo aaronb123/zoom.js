@@ -511,7 +511,12 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 /* ============================================================
    Pose engines
    ============================================================ */
+async function wasmAllowed() {
+  try { await WebAssembly.compile(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0])); return true; } catch { return false; }
+}
+
 async function initMediaPipe() {
+  if (!(await wasmAllowed())) throw new Error("WebAssembly is blocked here");
   let vision = null, loader = null, lastErr;
   for (const [bundle, ldr] of CONFIG.mp) {
     try { vision = await import(bundle); loader = ldr; break; } catch (e) { lastErr = e; }
@@ -540,10 +545,16 @@ async function initMediaPipe() {
 }
 
 async function initMoveNet() {
-  if (!window.tf) {
-    for (const src of CONFIG.tf) { try { await loadScript(src); if (window.tf) break; } catch {} }
+  // tf.min.js bundles regenerator-runtime, which falls back to Function() (blocked by the viewer's CSP)
+  // unless a global regeneratorRuntime already exists. A failed load leaves a half-built window.tf behind.
+  if (!("regeneratorRuntime" in window)) window.regeneratorRuntime = undefined;
+  if (!window.tf?.loadGraphModel) {
+    for (const src of CONFIG.tf) {
+      delete window.tf;
+      try { await loadScript(src); if (window.tf?.loadGraphModel) break; } catch {}
+    }
   }
-  const tf = window.tf; if (!tf) throw new Error("TensorFlow.js unavailable");
+  const tf = window.tf; if (!tf?.loadGraphModel) throw new Error("TensorFlow.js unavailable");
   try { await tf.setBackend("webgl"); } catch { await tf.setBackend("cpu"); }
   await tf.ready();
   let model = null, S = 256;
@@ -599,9 +610,9 @@ let engine = null;
 const engineReady = (async () => {
   const forced = new URLSearchParams(location.search).get("engine");
   const order = forced === "movenet" ? [initMoveNet] : [initMediaPipe, initMoveNet];
-  let lastErr;
+  const errs = [];
   for (const init of order) {
-    try { engine = await init(); break; } catch (e) { lastErr = e; console.warn("Pose engine failed", e); }
+    try { engine = await init(); break; } catch (e) { errs.push(init.name.replace("init", "") + ": " + (e?.message || e)); console.warn("Pose engine failed", e); }
   }
   const el = $("#engine");
   if (engine) {
@@ -610,7 +621,7 @@ const engineReady = (async () => {
   } else {
     el.dataset.state = "error";
     $("#engineText").textContent = "Pose model failed to load";
-    showError("The pose model could not start in this browser. Try Chrome or Safari, or open the lab on a laptop. (" + (lastErr?.message || "unknown error") + ")");
+    showError("The pose model could not start in this browser. Screenshot this and send it over. Details: " + errs.join(" · "));
   }
   return engine;
 })();
@@ -632,7 +643,10 @@ function waitEvent(el, name, ms = 4000) {
 async function loadVideo(file) {
   video.removeAttribute("src"); video.load();
   video.src = URL.createObjectURL(file);
-  await waitEvent(video, "loadeddata", 15000);
+  const loaded = waitEvent(video, "loadeddata", 15000);
+  // iOS only decodes frames once playback has started; a muted inline play/pause wakes it up.
+  try { await video.play(); video.pause(); } catch {}
+  await loaded;
   if (!video.videoWidth) throw new Error("This video could not be decoded. On iPhone, set Camera › Formats to “Most Compatible”, or export the clip again.");
   const scale = Math.min(1, 640 / Math.max(video.videoWidth, video.videoHeight));
   work.width = Math.round(video.videoWidth * scale); work.height = Math.round(video.videoHeight * scale);
@@ -733,6 +747,7 @@ function findPhases(series, slow) {
     if (dH[c] > -2.5) break;
     let i = c; while (i > 0 && H[i - 1] >= H[i] - 0.04) i--;
     let tp = i; for (let j = i; j <= c; j++) if (H[j] > H[tp]) tp = j;
+    for (let j = c; j > tp; j--) if (H[j] >= H[tp] - 0.03) { tp = j; break; }   // latest frame still at the top: end of any pause
     if (H[tp] < 0.45) continue;
     let lowAfter = c; for (let j = c; j < n && rt[j] - rt[c] <= 0.6; j++) if (H[j] < H[lowAfter]) lowAfter = j;
     let follow = false; for (let j = lowAfter; j < n && rt[j] - rt[lowAfter] <= 2.5; j++) if (H[j] - H[lowAfter] > 0.5 * (H[tp] - H[lowAfter])) { follow = true; break; }

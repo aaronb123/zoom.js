@@ -23,7 +23,10 @@ export function createServer() {
     const file = path.join(ROOT, path.normalize(p));
     if (!file.startsWith(ROOT) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.writeHead(404); return res.end("not found"); }
     const ext = path.extname(file);
-    res.writeHead(200, { "content-type": TYPES[ext] || "application/octet-stream" });
+    const headers = { "content-type": TYPES[ext] || "application/octet-stream" };
+    // SWINGLAB_CSP lets tests mimic the artifact viewer's script restrictions.
+    if (process.env.SWINGLAB_CSP && p === "/index.html") headers["content-security-policy"] = process.env.SWINGLAB_CSP;
+    res.writeHead(200, headers);
     if (p === "/index.html") return res.end(HEAD + fs.readFileSync(file, "utf8") + "</body></html>");
     fs.createReadStream(file).pipe(res);
   });
