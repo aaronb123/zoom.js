@@ -1050,11 +1050,14 @@ function findEvents(series, slow, lead, slowAuto = false) {
   };
 
   // Downswing candidates, steepest first.
-  const order = [...dH.keys()].sort((a, b) => dH[a] - dH[b]);
-  const steepest = dH[order[0]];
+  const dtV = median(series.slice(1).map((f, k) => f.t - series[k].t)) || 1 / 30;
+  const half = Math.max(2, Math.round(0.05 * slow / dtV));
+  const fall = H.map((_, i) => { const a = Math.max(0, i - half), b = Math.min(n - 1, i + half); return (H[b] - H[a]) / ((rt[b] - rt[a]) || 1); });
+  const order = [...fall.keys()].sort((a, b) => fall[a] - fall[b]);
+  const steepest = fall[order[0]];
   const cands = [];
   for (const c of order.slice(0, 60)) {
-    if (dH[c] > Math.min(-0.5, 0.3 * steepest)) break;   // relative to this clip, so slo-mo still qualifies
+    if (fall[c] > Math.min(-0.5, 0.3 * steepest)) break;   // relative to this clip, so slo-mo still qualifies
     let i = c; while (i > 0 && H[i - 1] >= H[i] - 0.04) i--;
     let tp = i; for (let j = i; j <= c; j++) if (H[j] > H[tp]) tp = j;
     for (let j = c; j > tp; j--) if (H[j] >= H[tp] - 0.03) { tp = j; break; }   // latest frame still at the top: end of any pause
@@ -1141,7 +1144,9 @@ function findEvents(series, slow, lead, slowAuto = false) {
       break;
     }
   }
-  if (impact < 0) { impact = p; for (let j = p; j < n && within(j, p, 0.35, 0.8); j++) if (H[j] < H[impact]) impact = j; impactT = series[impact].t; }
+  // In a real swing the hands always come back to about setup height at impact. A tracking glitch or a
+  // relaxed finish never does, so that candidate is not a swing.
+  if (impact < 0) { findEvents.why = "hands never returned to setup height"; return null; }
 
   // Finish: the held pose after impact. Take the first still stretch that lasts 0.5 s (real), else the longest;
   // a brief pause while the club is still swinging round does not count. The hold is that stretch.
@@ -1155,9 +1160,9 @@ function findEvents(series, slow, lead, slowAuto = false) {
   }
   const dur = ([a, b]) => rt[b] - rt[a];
   let seg = segs.find((g) => dur(g) >= 0.5) || segs.reduce((best, g) => (!best || dur(g) > dur(best) ? g : best), null);
-  let finish, holdEnd;
+  let finish, holdEnd, heldSeen = true;
   if (seg && dur(seg) >= 0.1) { finish = seg[0]; holdEnd = seg[1]; while (holdEnd < n - 1 && bodySpeed[holdEnd + 1] < 0.5) holdEnd++; }
-  else { finish = impact; for (let j = impact; j < n; j++) if (H[j] > H[finish]) finish = j; holdEnd = finish; }
+  else { finish = impact; for (let j = impact; j < n; j++) if (H[j] > H[finish]) finish = j; holdEnd = finish; heldSeen = false; }
   const tailAfterFinish = rt[n - 1] - rt[finish];
 
   return {
@@ -1165,7 +1170,8 @@ function findEvents(series, slow, lead, slowAuto = false) {
     times: { address: series[address].t, takeaway: takeT, halfBack: series[halfBack].t, top: topT, halfDown: series[halfDown].t, impact: impactT, finish: series[finish].t },
     torso, rt, H, bodyH,
     tempo: { back: (topT - takeT) / slow, down: (impactT - topT) / slow, ok: takeawayFound && impact > top + 1 },
-    hold: { secs: rt[holdEnd] - rt[finish], cut: holdEnd === n - 1, measurable: holdEnd < n - 1 ? tailAfterFinish >= 0.6 || rt[holdEnd] - rt[finish] >= 0.3 : rt[holdEnd] - rt[finish] >= 1.6 },
+    // No still finish found at all: not measured (rather than "held for 0 s").
+    hold: { secs: rt[holdEnd] - rt[finish], cut: holdEnd === n - 1, measurable: heldSeen && (holdEnd < n - 1 ? tailAfterFinish >= 0.6 || rt[holdEnd] - rt[finish] >= 0.3 : rt[holdEnd] - rt[finish] >= 1.6) },
     downFrames: impact - top, topPeakT: series[peak].t,
   };
   }
@@ -1345,7 +1351,10 @@ async function analyzeClip(file, opts, hooks = {}) {
       let est = opts.slow;
       if (real > 0.6) est = clamp(Math.round(downVideo / 0.3 * 2) / 2, 1.5, 10);
       else if (real < 0.15 && opts.slow > 1) est = Math.max(1, Math.round(downVideo / 0.3 * 2) / 2);
-      if (est !== opts.slow) { opts.slow = est; opts.slowGuessed = est > 1; ev = findEvents(series, opts.slow, lead, !!opts.slowAuto) || ev; }
+      if (est !== opts.slow) {
+        const again = findEvents(series, est, lead, true);
+        if (again) { opts.slow = est; opts.slowGuessed = est > 1; ev = again; }
+      }
     }
     if (!ev) { console.warn("swing window rejected", a.toFixed(2), b.toFixed(2), findEvents.why); continue; }
     if (!isGolferPose(avgPose(series, ev.idx.address, 2), W, Hpx) || !isGolferPose(avgPose(series, ev.idx.impact, 1), W, Hpx)) {
