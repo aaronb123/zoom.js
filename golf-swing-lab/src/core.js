@@ -580,6 +580,18 @@ function assessQuality(series, ev, W, Hpx, viewInfo, fps, stride = 1) {
   return { level, issues, coverage, vis, bodyH, footDrift, cameraMoved: issues.some((x) => x.key === "camera") };
 }
 
+/* A real golf swing shows a whole standing body: head above hips above knees above feet, feet inside the
+   frame and the body a sensible size. Selfie clips, walking past the camera or a cut-off frame fail this. */
+function isGolferPose(kp, W, Hpx) {
+  const hip = mid(kp.lhip, kp.rhip), knee = mid(kp.lkne, kp.rkne), ank = mid(kp.lank, kp.rank);
+  if (![kp.nose.y, hip.y, knee.y, ank.y].every(Number.isFinite)) return false;
+  const ordered = kp.nose.y < hip.y && hip.y < knee.y && knee.y < ank.y + 2;
+  const feetIn = Math.max(kp.lank.y, kp.rank.y) < 0.995 * Hpx && Math.min(kp.lank.x, kp.rank.x) > 0 && Math.max(kp.lank.x, kp.rank.x) < W;
+  const bodyH = (ank.y - kp.nose.y) / Hpx;
+  const seen = Math.max(kp.lank.v, kp.rank.v) >= 0.15 && (kp.lhip.v + kp.rhip.v) / 2 >= 0.25;
+  return ordered && feetIn && bodyH >= 0.2 && bodyH <= 1.02 && seen;
+}
+
 /* View from apparent shoulder width over torso length at address: ≥0.6 face-on, ≤0.35 down the line. */
 function classifyView(series, i, forced) {
   const kp = avgPose(series, i, 3);
@@ -669,11 +681,14 @@ async function analyzeClip(file, opts, hooks = {}) {
     const lead = opts.hand === "L" ? "r" : "l";
     const ev = findEvents(series, opts.slow, lead);
     if (!ev) { console.warn("swing window rejected", a.toFixed(2), b.toFixed(2), findEvents.why); continue; }
+    if (!isGolferPose(avgPose(series, ev.idx.address, 2), W, Hpx) || !isGolferPose(avgPose(series, ev.idx.impact, 1), W, Hpx)) {
+      console.warn("swing window rejected", a.toFixed(2), b.toFixed(2), "no full standing body in frame"); continue;
+    }
     ev.slow = opts.slow; ev.lead = lead;
     const viewInfo = classifyView(series, ev.idx.address, opts.view);
     swings.push({ series, ev, viewInfo, t0: a, t1: b, crop, fps, stride });
   }
-  if (!swings.length) throw new Error("I could see you, but not a full swing. Check the whole swing is in the clip, from setup to finish.");
+  if (!swings.length) throw new Error("I could not find a full golf swing. Check your whole body, head to feet, is in frame from setup to finish.");
   if (opts.slow > 1 && !opts.slowGuessed) { /* user said slo-mo: audio is stretched, skip it */ }
   // Strike sound, if the audio decoded and a clear click sits near the pose impact.
   const onsets = await onsetsP;
