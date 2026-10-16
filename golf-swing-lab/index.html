@@ -1147,11 +1147,11 @@ function findEvents(series, slow, lead, slowAuto = false) {
   // In a real swing the hands always come back to about setup height at impact. A tracking glitch or a
   // relaxed finish never does, so that candidate is not a swing.
   if (impact < 0) {
-    // Hands at impact can sit a little higher than at setup (shaft lean, down-the-line view): accept the lowest
-    // point if it gets within a quarter torso; otherwise this is not a swing.
+    // Hands at impact can sit higher than at setup (standing up through the ball, shaft lean): accept the lowest
+    // point if the hands came most of the way back down; a glitch or relaxed finish stays up near finish height.
     let lo = -1;
     for (let j = Math.max(top + 1, halfDown); j < n && within(j, top, 1.2, 3); j++) if (lo < 0 || H[j] < H[lo]) lo = j;
-    if (lo < 0 || H[lo] > Haddr + 0.25) { findEvents.why = "hands never returned to setup height"; return null; }
+    if (lo < 0 || H[lo] > Haddr + 0.35 * (H[top] - Haddr)) { findEvents.why = "hands never came back down"; return null; }
     impact = lo; impactT = series[lo].t;
   }
 
