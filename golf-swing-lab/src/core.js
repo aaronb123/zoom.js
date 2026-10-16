@@ -475,6 +475,8 @@ function findEvents(series, slow, lead) {
 
   // Impact: after halfway down, hands return to address height (interpolated), 0.12-0.6 s after the top.
   const Haddr = (hipRef - hAddr.y) / torso;
+  // Real address hands hang near or below hip height; if the clip starts mid-backswing there is no address.
+  if (top === 0 || rt[take] - rt[0] < 0.1 && take < 3 || Haddr > 0.3) return fail("start of the swing is cut off");
   const target = Haddr + 0.08;
   let impact = -1, impactT = NaN;
   for (let j = Math.max(top + 1, halfDown); j < n; j++) {
@@ -545,7 +547,7 @@ function audioImpact(onsets, tPose) {
 /* ---------- tracking quality ----------
    Every swing gets an honest confidence rating with the specific reason, so a bad clip never
    produces a confident-looking score. */
-function assessQuality(series, ev, W, Hpx, viewInfo, fps) {
+function assessQuality(series, ev, W, Hpx, viewInfo, fps, stride = 1) {
   const issues = [];
   const core = ["lsho", "rsho", "lhip", "rhip"];
   const i0 = ev.idx.address, i1 = ev.idx.finish;
@@ -561,7 +563,7 @@ function assessQuality(series, ev, W, Hpx, viewInfo, fps) {
   const out = seg.some((f) => ["nose", "lank", "rank", "lwri", "rwri"].some((k) => { const p = f.kp[k]; return p.x < margin * W || p.x > (1 - margin) * W || p.y < margin * Hpx || p.y > (1 - margin) * Hpx; }));
   if (out) issues.push({ key: "edge", text: "Part of you leaves the frame (often the hands at the top). Step back so your whole swing fits." });
   const realFps = fps * (ev.slow || 1);
-  if (realFps < 50 && ev.downFrames < 9) issues.push({ key: "fps", text: `This clip is about ${Math.round(fps)} fps, so the downswing is only ${ev.downFrames} frames and rhythm is rough. Film at 60 fps or in slo-mo.` });
+  if (realFps < 50 && !ev.audioImpact && ev.downFrames < 9 * stride) issues.push({ key: "fps", text: `This clip is about ${Math.round(fps)} fps, so the downswing is only ${Math.round(ev.downFrames * stride)} frames and rhythm is rough. Film at 60 fps or in slo-mo.` });
   if (viewInfo.unclear) issues.push({ key: "angle", text: "The camera is at an in-between angle. Film straight face-on or straight down the line for reliable numbers." });
   // Planted feet should not move between setup and impact; if they do, the camera moved.
   // A moving camera shifts every planted point together, while one hidden foot point just jitters. So take the
@@ -586,7 +588,7 @@ function classifyView(series, i, forced) {
   return { view: ratio >= 0.48 ? "face" : "dtl", ratio, unclear: ratio > 0.35 && ratio < 0.6 };
 }
 
-function estimateSlow(coarse) {
+function estimateSlow(coarse, step = 0.12) {
   const pts = coarse.filter((f) => f.kp).map((f) => {
     const torso = dist(mid(f.kp.lsho, f.kp.rsho), mid(f.kp.lhip, f.kp.rhip)) || 1;
     return { t: f.t, H: (mid(f.kp.lhip, f.kp.rhip).y - mid(f.kp.lwri, f.kp.rwri).y) / torso };
@@ -598,7 +600,7 @@ function estimateSlow(coarse) {
       if (pts[j].H < pts[i].H - 1.0) { fastest = Math.min(fastest, pts[j].t - pts[i].t); break; }
     }
   }
-  if (!Number.isFinite(fastest) || fastest < 0.5) return 1;
+  if (!Number.isFinite(fastest) || fastest < Math.max(0.5, 2.05 * step)) return 1;   // a drop the coarse grid cannot resolve is real time
   return clamp(Math.round(fastest / 0.2 * 2) / 2, 1.5, 10);
 }
 
@@ -625,7 +627,7 @@ async function analyzeClip(file, opts, hooks = {}) {
   }
   // "Work it out": real downswings drop the hands about a torso length in under 0.25 s, so a much slower
   // drop means slo-mo. The estimate sizes the windows and time thresholds; it is flagged on the result.
-  if (!opts.slow) { opts.slow = estimateSlow(coarse); opts.slowGuessed = opts.slow > 1; }
+  if (!opts.slow) { opts.slow = estimateSlow(coarse, step1); opts.slowGuessed = opts.slow > 1; }
   const wins = findWindows(coarse, dur, opts.slow);
   if (!wins.length) throw new Error("No swing found. Make sure your whole body is in frame and your hands go above your shoulders at the top.");
   say(30, "track", "Loading the accurate tracker");
@@ -680,18 +682,18 @@ async function analyzeClip(file, opts, hooks = {}) {
     if (tA != null && Math.abs(tA - s.ev.times.impact) < 0.12) {
       s.ev.poseImpactT = s.ev.times.impact;
       s.ev.times.impact = tA; s.ev.audioImpact = true;
-      s.ev.tempo.down = (tA - s.ev.times.top) / opts.slow;
+      s.ev.tempo.down = (tA - (s.ev.times.top - 0.5 / s.fps)) / opts.slow;   // pose times sit at frame centres
     }
   }
   say(94, "score", "Measuring and scoring");
   for (const s of swings) {
-    s.quality = assessQuality(s.series, s.ev, W, Hpx, s.viewInfo, s.fps / s.stride);
+    s.quality = assessQuality(s.series, s.ev, W, Hpx, s.viewInfo, s.fps, s.stride);
     const res = computeChecks(s.series, s.ev, opts, s.viewInfo);
     Object.assign(s, res);
     // A moving camera fakes sway: switch off the side-to-side checks rather than guess.
     if (s.quality.cameraMoved) for (const id of ["hipSway", "headSway", "weightShift", "headImpact", "stayBehind", "posture", "headHeight"]) if (s.checks[id]) s.checks[id].measured = false;
     s.total = scoreSwing(s.checks, s.view);
-    if (s.quality.level === "poor" && s.total.score != null) s.total.score = Math.min(s.total.score, 54);
+    if (s.quality.level === "poor" && s.total.score > 54) { s.total.score = 54; s.total.capped = "Tracking was poor on this clip, so the score is capped at 54."; }
     s.times = s.ev.times;
   }
   return { swings, dur, W, H: Hpx, fps };

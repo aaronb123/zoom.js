@@ -45,7 +45,7 @@ const CHECKS = {
   },
   stayBehind: {
     name: "Chest behind the ball at the hit", short: "Staying behind", view: "face", bucket: "direction", prio: 7, conf: "med", unit: "cm", event: "impact",
-    anchors: { centre: 15, tour: [12.7, 17.8], amateur: [7.6, 22], beginner: 2.5, beginnerLo: -5 },
+    anchors: { centre: 15, tour: [12.7, 17.8], amateur: [7.6, 22], beginner: 2.5, beginnerHi: 30 },
     good: "Your hips led and your chest stayed behind them at the hit, like the pros.",
     lo: "Your upper body races ahead of your hips into the hit.",
     hi: "You are leaning back a lot at the hit.",
@@ -174,7 +174,7 @@ const CHECKS = {
   },
   finishHold: {
     name: "Holding your finish", short: "Balance", view: "both", bucket: "finish", prio: 4, conf: "high", unit: "s", event: "finish",
-    anchors: { centre: 3, tour: [2.5, 99], amateur: [1.6, 99], beginner: 0.7 },
+    anchors: { centre: 3, tour: [2.5, 99], amateur: [1.6, 99], beginner: 0.7, atLeast: true },
     good: "Balanced finish you could hold. That shows control.",
     lo: "You come out of your finish straight away, usually a sign you were off balance.",
     ball: "Poor balance means inconsistent contact.",
@@ -222,7 +222,7 @@ const LEVELS = [
   { name: "Tour", min: 87, line: "Tour reference ranges on everything measured, over at least 10 swings." },
 ];
 const levelOf = (score) => [...LEVELS].reverse().find((l) => score >= l.min) || LEVELS[0];
-const LADDER = LEVELS.slice(0, 5);   // the ladder shown on screen (Tour sits off the top)
+const LADDER = LEVELS.slice(0, 4);   // what one camera angle can show; Single figures and Tour need more than one clip
 
 function stanceAnchors(club) {
   const c = clubKind(club);
@@ -271,6 +271,13 @@ function headCentre(kp) {
   if (kp.rear.v >= 0.5) return { ...kp.rear };
   return { ...kp.nose };
 }
+/* Head reference chosen once for both poses being compared, so a visibility flicker on one ear cannot
+   move the "head" by half the ear spacing between poses. */
+function headKeys(...poses) {
+  const ok = (k) => poses.every((p) => p[k].v >= 0.5);
+  return ok("lear") && ok("rear") ? ["lear", "rear"] : ok("lear") ? ["lear"] : ok("rear") ? ["rear"] : ["lear", "rear"];
+}
+const headAt = (kp, keys) => ({ x: mean(keys.map((k) => kp[k].x)), y: mean(keys.map((k) => kp[k].y)) });
 /* Fraction of frames within ±50 ms of an event where every needed joint is visible enough. */
 function visibleAround(series, i, keys, minV, slow) {
   const t0 = series[i].t;
@@ -326,8 +333,8 @@ function computeChecks(series, ev, opts, viewInfo) {
 
   // Head height (both views): positive = head rose.
   {
-    const hA = headCentre(A), hI = headCentre(I);
-    put("headHeight", cm(hA.y - hI.y), vis(idx.impact, ["lear", "rear"].filter((k) => A[k].v >= 0.5).concat(["nose"]), 0.5));
+    const kH = headKeys(A, I);
+    put("headHeight", cm(headAt(A, kH).y - headAt(I, kH).y), vis(idx.impact, kH, 0.4));
   }
 
   if (view === "face") {
@@ -339,13 +346,13 @@ function computeChecks(series, ev, opts, viewInfo) {
     const dir = geoDir;   // +1: target is to the right of the image
     const hipA = mid(A.lhip, A.rhip), hipT = mid(T.lhip, T.rhip), hipI = mid(I.lhip, I.rhip), hipF = mid(F.lhip, F.rhip);
     const shoI = mid(I.lsho, I.rsho), shoT = mid(T.lsho, T.rsho);
-    const hA = headCentre(A), hT = headCentre(T), hI = headCentre(I);
+    const kI = headKeys(A, I), kT = headKeys(A, T);
     const hips = ["lhip", "rhip"];
     put("weightShift", cm((hipI.x - hipA.x) * dir), vis(idx.impact, hips));
     put("stayBehind", cm((hipI.x - shoI.x) * dir), vis(idx.impact, [...hips, "lsho", "rsho"]));
-    put("headImpact", cm((hI.x - hA.x) * dir), vis(idx.impact, ["nose"]));
+    put("headImpact", cm((headAt(I, kI).x - headAt(A, kI).x) * dir), vis(idx.impact, kI, 0.4));
     put("hipSway", cm(-(hipT.x - hipA.x) * dir), vis(idx.top, hips));
-    put("headSway", cm(-(hT.x - hA.x) * dir), vis(idx.top, ["nose"]));
+    put("headSway", cm(-(headAt(T, kT).x - headAt(A, kT).x) * dir), vis(idx.top, kT, 0.4));
     put("spineTop", deg(Math.atan2((shoT.x - hipT.x) * -dir, hipT.y - shoT.y)), vis(idx.top, [...hips, "lsho", "rsho"]));
     const elbow = angleAt(T[L("sho")], T[L("elb")], T[L("wri")]);
     put("leadArm", elbow, vis(idx.top, [L("sho"), L("elb"), L("wri")], 0.6), { category: elbow >= 160 ? "straight" : elbow >= 140 ? "soft" : "bent" });
@@ -410,38 +417,43 @@ function scoreSwing(checks, view) {
     const c = checks[id];
     if (!c || !c.measured) continue;
     measuredW += w * BUCKETS[d.bucket].weight;
-    (byBucket[d.bucket] ||= []).push({ s: Math.max(5, c.score), w });
+    (byBucket[d.bucket] ||= []).push({ s: Math.max(5, c.score), w, p: d.prio });
   }
   const gmean = (arr) => Math.exp(arr.reduce((a, x) => a + x.w * Math.log(x.s), 0) / arr.reduce((a, x) => a + x.w, 0));
-  const buckets = Object.entries(byBucket).map(([b, arr]) => ({ b, s: gmean(arr), w: BUCKETS[b].weight }));
+  // A bucket made only of estimates counts at half weight; a mixed bucket proportionally.
+  const buckets = Object.entries(byBucket).map(([b, arr]) => ({ b, s: gmean(arr), w: BUCKETS[b].weight * arr.reduce((a, x) => a + x.w, 0) / arr.reduce((a, x) => a + x.p, 0) }));
   if (!buckets.length) return { score: null, partial: true, capped: null, buckets: {} };
   let score = Math.round(gmean(buckets));
   let capped = null;
-  const red = (lo, hi, below) => Object.entries(checks).filter(([id, c]) => c.measured && CHECKS[id].prio >= lo && CHECKS[id].prio <= hi && c.score < below);
+  const red = (lo, hi, below) => Object.entries(checks).filter(([id, c]) => c.measured && CHECKS[id].conf !== "low" && CHECKS[id].prio >= lo && CHECKS[id].prio <= hi && c.score < below);
   const r10 = red(9, 10, 30), r8 = red(7, 8, 20);
   if (r10.length >= 2 && score > 44) { score = 44; capped = "Two big contact faults cap the score at 44."; }
   else if (r10.length === 1 && score > 54) { score = 54; capped = "A big contact fault caps the score at 54."; }
-  else if (r8.length && score > 64) { score = 64; capped = "A big direction or backswing fault caps the score at 64."; }
-  if (score > 74) { score = 74; capped = "A one-angle clip tops out at Club golfer. Film the other angle too for a full score."; }
+  else if (r8.length && score > 54) { score = 54; capped = "A big direction or backswing fault caps the score at 54."; }
+  if (score > 74) { score = 74; capped = "One camera angle can’t confirm more than Club golfer level."; }
   const partial = measuredW < 0.7 * possibleW;
   return { score, partial, capped, buckets: Object.fromEntries(buckets.map((x) => [x.b, Math.round(x.s)])) };
 }
 
-/* The single biggest fix: largest weighted loss among measured checks. */
-function pickFix(checks) {
+/* The single biggest fix: the check whose improvement to "on target" would raise the score most
+   (weighted loss breaks ties, e.g. under a cap). */
+function pickFix(checks, view) {
+  const base = view ? scoreSwing(checks, view).score ?? 0 : 0;
   let best = null;
   for (const [id, c] of Object.entries(checks)) {
     if (!c.measured || c.score >= 80) continue;
     const d = CHECKS[id];
     const loss = (100 - c.score) * d.prio * BUCKETS[d.bucket].weight * (d.conf === "low" ? 0.5 : 1);
-    if (loss > 0 && (!best || loss > best.loss)) best = { id, loss, c };
+    const gain = view ? (scoreSwing({ ...checks, [id]: { ...c, score: Math.max(c.score, 80) } }, view).score ?? 0) - base : 0;
+    const key = gain * 1e6 + loss;
+    if (loss > 0 && (!best || key > best.key)) best = { id, loss, gain, key, c };
   }
   return best;
 }
 /* The best genuine strength: a measured, high-confidence check in the good band. Never invented. */
-function pickStrength(checks) {
+function pickStrength(checks, view) {
   let best = null;
-  const fixId = pickFix(checks)?.id;
+  const fixId = pickFix(checks, view)?.id;
   for (const [id, c] of Object.entries(checks)) {
     const d = CHECKS[id];
     if (!c.measured || c.score < 80 || d.conf === "low" || id === fixId) continue;
@@ -477,7 +489,7 @@ function checkScale(id, club) {
   const begLo = a.beginner < c ? a.beginner : a.beginnerLo, begHi = a.beginner > c ? a.beginner : a.beginnerHi;
   const lo = Number.isFinite(begLo) ? c - 1.35 * (c - begLo) : a.amateur[0] - 0.8 * (c - a.amateur[0] || 1);
   let hi = Number.isFinite(begHi) ? c + 1.35 * (begHi - c) : a.amateur[1] + 0.8 * (a.amateur[1] - c || 1);
-  if (a.tour[1] >= 50) hi = c * 1.25;                       // "at least" checks like balance
+  if (a.atLeast) hi = c * 1.25;                             // "at least" checks like balance
   const band = [Math.max(lo, a.amateur[0]), Math.min(hi, a.amateur[1])];
   return { lo, hi, band, a };
 }

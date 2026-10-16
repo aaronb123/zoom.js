@@ -43,6 +43,7 @@ for (const id of ["view", "slowmo", "voiceOn"]) {
 }
 $("#hand").onchange = async () => { const p = currentPlayer(); if (p && canEditPlayer(p.id)) { p.hand = $("#hand").value; await Store.savePlayer(p); } summariseSettings(); };
 $("#heightCm").onchange = async () => { const p = currentPlayer(); const v = +$("#heightCm").value; if (p && canEditPlayer(p.id) && v >= 120 && v <= 220) { p.heightCm = v; await Store.savePlayer(p); } summariseSettings(); };
+function heightFor(p) { const v = +$("#heightCm").value; return v >= 120 && v <= 220 ? v : (p?.heightCm || 178); }
 function summariseSettings() {
   const v = { auto: "angle auto", face: "face-on", dtl: "down the line" }[$("#view").value];
   const s = { "0": "", "1": " · normal speed" }[$("#slowmo").value] ?? ` · slo-mo ×${$("#slowmo").value}`;
@@ -91,7 +92,7 @@ async function analyze(file) {
   const p = currentPlayer();
   const opts = {
     view: $("#view").value, hand: $("#hand").value, slow: +$("#slowmo").value, club: settings.club,
-    heightCm: +$("#heightCm").value || p?.heightCm || 178,
+    heightCm: heightFor(p),
   };
   state.opts = opts; state.file = file;
   $("#intake").hidden = true; $("#results").hidden = true; $("#working").hidden = false;
@@ -105,7 +106,8 @@ async function analyze(file) {
     setWork(97, "score", "Saving key frames");
     for (const s of result.swings) s.thumbs = await grabThumbs(s, result);
     state.result = result;
-    state.cur = result.swings.reduce((bi, s, i) => ((s.total.score ?? -1) > (result.swings[bi].total.score ?? -1) ? i : bi), 0);
+    const rank = (s) => (s.total.partial ? -1000 : 0) + (s.total.score ?? -1);
+    state.cur = result.swings.reduce((bi, s, i) => (rank(s) > rank(result.swings[bi]) ? i : bi), 0);
     $("#working").hidden = true; $("#results").hidden = false;
     renderResults();
     await saveSession(result.swings, opts);
@@ -217,14 +219,14 @@ function drawOverlay() {
   const t = video.currentTime;
   if (ui.lines) drawCoachLines(octx, s, sc, t, dpr);
   const i = nearestFrame(s.series, t);
-  const fix = pickFix(s.checks);
+  const fix = pickFix(s.checks, s.view);
   const hl = fix && ui.highlight ? new Set(HIGHLIGHT[fix.id] || []) : null;
   if (i >= 0) drawSkeleton(octx, s.series[i].kp, sc, 2.6 * dpr, hl);
   $("#phaseTag").textContent = phaseAt(s, t);
   const span = s.view_t1 - s.view_t0;
   $("#scrub").value = Math.round(1000 * clamp((t - s.view_t0) / span, 0, 1));
 }
-function loop() { drawOverlay(); const s = curSwing(); if (s && !video.paused && video.currentTime >= s.view_t1) { video.currentTime = s.view_t0; } if (!video.paused) requestAnimationFrame(loop); }
+function loop() { drawOverlay(); const s = curSwing(); if (s && !ui.recording && !video.paused && video.currentTime >= s.view_t1) { video.currentTime = s.view_t0; } if (!video.paused) requestAnimationFrame(loop); }
 video.addEventListener("play", () => { $("#play").innerHTML = '<svg><use href="#i-pause"/></svg><span>Pause</span>'; requestAnimationFrame(loop); });
 video.addEventListener("pause", () => { $("#play").innerHTML = '<svg><use href="#i-play"/></svg><span>Play</span>'; drawOverlay(); });
 video.addEventListener("seeked", drawOverlay);
@@ -258,8 +260,8 @@ function sizeStage() {
   st.style.width = `min(100%, ${Math.round((R.W / R.H) * 66)}vh)`;
 }
 function verdictLine(s) {
-  const lv = levelOf(s.total.score ?? 0);
-  return lv.line;
+  if (s.total.score == null) return "Not enough of the swing was measured to give a score.";
+  return levelOf(s.total.score).line;
 }
 function renderResults() {
   const s = curSwing(), R = state.result;
@@ -273,10 +275,11 @@ function renderResults() {
   const score = s.total.score;
   const C = 2 * Math.PI * 52;
   $("#ringArc").setAttribute("stroke-dasharray", `${C * (score ?? 0) / 100} ${C}`);
-  $("#ringArc").setAttribute("stroke", score >= 65 ? css("--good") : score >= 40 ? css("--ok") : css("--work"));
+  const st0 = statusOf(score);
+  $("#ringArc").setAttribute("stroke", css(st0 === "good" ? "--good" : st0 === "ok" ? "--ok" : "--work"));
   $("#ringNum").textContent = score ?? "–";
   const lv = levelOf(score ?? 0);
-  $("#levelName").textContent = lv.name;
+  $("#levelName").textContent = score == null ? "Not scored" : lv.name;
   $("#ladder").innerHTML = LADDER.map((l) => `<span class="${(score ?? 0) >= l.min ? "on" : ""}"></span>`).join("");
   $("#ladderNames").innerHTML = LADDER.map((l, i) => `<span>${i === 0 || i === LADDER.length - 1 || l.name === lv.name ? esc(l.name) : ""}</span>`).join("");
   $("#swingMeta").textContent = `${s.view === "face" ? "Face-on" : "Down the line"} · ${state.opts.club}`;
@@ -292,8 +295,14 @@ function renderResults() {
     ? `<b>Tracking: good.</b><span>Clear view, ${Math.round(R.fps)} fps${state.opts.slowGuessed ? ", slo-mo detected" : ""}${s.ev.audioImpact ? ", impact timed from the strike sound" : ""}.</span>`
     : `<b>Tracking: ${q.level === "ok" ? "fair" : "poor"}.</b><span>${q.issues.map((x) => esc(x.text)).join(" ")}</span>`;
   for (const n of s.notes) $("#quality").insertAdjacentHTML("beforeend", `<span>${esc(n)}</span>`);
-  // fix + strength
-  const fix = pickFix(s.checks);
+  renderFixCard(s);
+  const good = pickStrength(s.checks, s.view);
+  $("#goodCard").hidden = !good;
+  if (good) $("#goodCard").innerHTML = `<span class="label">What you did well</span><b>${esc(CHECKS[good.id].name)}</b><p class="muted">${esc(CHECKS[good.id].good)}</p>`;
+  renderRest(s, R);
+}
+function renderFixCard(s) {
+  const fix = pickFix(s.checks, s.view);
   if (fix) {
     const d = CHECKS[fix.id];
     const streak = graduation(fix.id);
@@ -309,13 +318,12 @@ function renderResults() {
   } else {
     $("#fix").innerHTML = `<span class="label">Fix this first</span><h3>Nothing big stands out</h3><p>Film the other camera angle to check the rest of your swing.</p>`;
   }
-  const good = pickStrength(s.checks);
-  $("#goodCard").hidden = !good;
-  if (good) $("#goodCard").innerHTML = `<span class="label">What you did well</span><b>${esc(CHECKS[good.id].name)}</b><p class="muted">${esc(CHECKS[good.id].good)}</p>`;
+}
+function renderRest(s, R) {
   renderBallTags();
   renderChecks();
   renderRhythm();
-  $("#frames").innerHTML = KEY_EVENTS.map(([k, l]) => `<figure data-k="${k}"><img alt="${l} position" src="${s.thumbs?.[k] || ""}"><figcaption>${l}</figcaption></figure>`).join("");
+  $("#frames").innerHTML = KEY_EVENTS.map(([k, l]) => `<figure data-k="${k}"><img alt="${l} position" src="${safeImg(s.thumbs?.[k])}"><figcaption>${l}</figcaption></figure>`).join("");
   $$("#frames figure").forEach((f) => f.onclick = () => { video.pause(); seekTo(s.times[f.dataset.k]); $("#stage").scrollIntoView({ behavior: "smooth", block: "center" }); });
   // scrubber ticks
   const span = s.view_t1 - s.view_t0;
@@ -324,6 +332,7 @@ function renderResults() {
   video.playbackRate = ui.slow ? 0.3 : 1;
   seekTo(s.view_t0).then(() => { video.play().catch(() => drawOverlay()); });
 }
+const safeImg = (u) => (typeof u === "string" && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(u) ? u : "");
 const dots = (n) => Array.from({ length: 5 }, (_, i) => (i < n ? "●" : "○")).join("");
 
 function renderChecks() {
@@ -344,7 +353,7 @@ function renderChecks() {
       <div class="more">
         <p>${esc(adviceFor(id, c, state.opts.club))}</p>
         <div><div class="track"><span class="band" style="left:${pos(sc.band[0])}%;width:${pos(sc.band[1]) - pos(sc.band[0])}%"></span><span class="dot" style="left:${pos(c.value)}%"></span></div>
-        <div class="track-labels"><span>You: ${esc(fmtCheck(id, c.value, c))}</span><span>Target: ${esc(fmtCheck(id, sc.a.tour[0], {}))}${sc.a.tour[1] < 50 ? " to " + esc(fmtCheck(id, sc.a.tour[1], {})) : "+"}</span></div></div>
+        <div class="track-labels"><span>You: ${esc(fmtCheck(id, c.value, c))}</span><span>Target: ${esc(fmtCheck(id, sc.a.tour[0], {}))}${!sc.a.atLeast ? " to " + esc(fmtCheck(id, sc.a.tour[1], {})) : "+"}</span></div></div>
         <p class="muted">${esc(d.explain)} ${esc(d.ball)}</p>
         <p><b>Drill:</b> ${esc(d.drill)}</p>
         <button class="btn small" data-show="${id}">Show me</button>
@@ -386,7 +395,7 @@ function renderBallTags() {
     const t = b.dataset.tag;
     s.tags = (s.tags || []).includes(t) ? s.tags.filter((x) => x !== t) : [...(s.tags || []).filter((x) => t !== "Good" && x !== "Good"), t];
     renderBallTags();
-    if (s.savedId && canEditPlayer(currentPid)) { try { await Store.updateSwing(currentPid, s.savedId, { tags: s.tags }); } catch {} }
+    if (s.savedId && canEditPlayer(s.savedPid)) { try { await Store.updateSwing(s.savedPid, s.savedId, { tags: s.tags }); } catch { toast("Could not save that tag"); } }
   });
 }
 
@@ -408,7 +417,7 @@ $("#prevF").onclick = () => stepFrame(-1);
 $("#nextF").onclick = () => stepFrame(1);
 $("#scrub").oninput = () => { const s = curSwing(); video.pause(); seekTo(s.view_t0 + (s.view_t1 - s.view_t0) * $("#scrub").value / 1000); };
 document.addEventListener("keydown", (e) => {
-  if ($("#results").hidden || ["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName)) return;
+  if ($("#results").hidden || $("#v-swing").hidden || ["INPUT", "TEXTAREA", "SELECT", "BUTTON", "SUMMARY", "A"].includes(e.target.tagName) || e.target.isContentEditable) return;
   if (e.key === "ArrowLeft") stepFrame(-1);
   if (e.key === "ArrowRight") stepFrame(1);
   if (e.key === " ") { e.preventDefault(); $("#play").click(); }
@@ -420,8 +429,8 @@ $("#newClip").onclick = () => { $("#results").hidden = true; $("#intake").hidden
 
 /* ---------- voice summary ---------- */
 function spokenSummary(s) {
-  const fix = pickFix(s.checks), good = pickStrength(s.checks);
-  const parts = [`Swing score ${s.total.score ?? "not available"}. ${levelOf(s.total.score ?? 0).name}.`];
+  const fix = pickFix(s.checks, s.view), good = pickStrength(s.checks, s.view);
+  const parts = [s.total.score == null ? "Not enough of this swing was measured to score it." : `Swing score ${s.total.score}. ${levelOf(s.total.score).name}.`];
   if (good) parts.push(`Good: ${CHECKS[good.id].short.toLowerCase()}.`);
   if (fix) parts.push(`Fix this first: ${CHECKS[fix.id].name.toLowerCase()}. ${adviceFor(fix.id, fix.c, state.opts.club)} Drill: ${CHECKS[fix.id].drill}`);
   if (s.checks.tempo) parts.push(`Rhythm ${s.checks.tempo.value.toFixed(1)} to 1.`);
@@ -466,7 +475,9 @@ async function askCoach() {
   try {
     const limits = await sample.limits?.().catch(() => null);
     const images = [];
-    if (limits?.images) for (const k of ["address", "top", "impact", "finish"]) { const u = s.thumbs?.[k]; if (u) images.push(await (await fetch(u)).blob()); }
+    try {
+      if (limits?.images) for (const k of ["address", "top", "impact", "finish"]) { const u = s.thumbs?.[k]; if (u) images.push(new Blob([decodeB64(u.slice(u.indexOf(",") + 1))], { type: "image/jpeg" })); }
+    } catch { images.length = 0; }
     const prompt = `${COACH_RULES}\n\n${contextFacts()}\n\nThis swing:\n${swingFacts(s)}\n\n${images.length ? "The four images are this swing at address, top, impact and finish, with the tracked skeleton drawn on." : ""}`;
     await sample(prompt, { signal: coachCtl.signal, images: images.length ? images.slice(0, limits.images.maxCount || 4) : undefined, onText: ({ text }) => { out.textContent = text.replace(/\*\*/g, ""); } });
   } catch (e) {
@@ -507,9 +518,9 @@ async function shareCard() {
   g.restore();
   g.fillStyle = "#e6eee8"; g.font = "800 46px Archivo, sans-serif"; g.fillText("Swing/Lab", 48, 96);
   g.fillStyle = "#8fa198"; g.font = "500 30px 'Instrument Sans', sans-serif"; g.textAlign = "right"; g.fillText(new Date().toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) + " · " + state.opts.club, W - 48, 96); g.textAlign = "left";
-  const fix = pickFix(s.checks), good = pickStrength(s.checks);
+  const fix = pickFix(s.checks, s.view), good = pickStrength(s.checks, s.view);
   g.fillStyle = "#5cc98b"; g.font = "850 150px Archivo, sans-serif"; g.fillText(String(s.total.score ?? "–"), 48, 1170);
-  g.fillStyle = "#e6eee8"; g.font = "800 46px Archivo, sans-serif"; g.fillText(levelOf(s.total.score ?? 0).name, 300, 1100);
+  g.fillStyle = "#e6eee8"; g.font = "800 46px Archivo, sans-serif"; g.fillText(s.total.score == null ? "Not scored" : levelOf(s.total.score).name, 300, 1100);
   g.fillStyle = "#8fa198"; g.font = "500 30px 'Instrument Sans', sans-serif";
   if (good) g.fillText("Good: " + CHECKS[good.id].name, 300, 1150);
   if (fix) { g.fillStyle = "#ff6b4f"; g.fillText("Working on: " + CHECKS[fix.id].name, 300, 1195); }
@@ -537,11 +548,12 @@ async function shareClip() {
       drawCoachLines(g, s, fit, video.currentTime, 1.4);
       const i = nearestFrame(s.series, video.currentTime); if (i >= 0) drawSkeleton(g, s.series[i].kp, fit, 3);
       g.restore();
-      g.fillStyle = "rgba(0,0,0,.6)"; g.fillRect(14, 14, 250, 64); g.fillStyle = "#fff"; g.font = "800 34px Archivo, sans-serif"; g.fillText(`${s.total.score ?? "–"}  ${levelOf(s.total.score ?? 0).name}`, 26, 58);
+      g.fillStyle = "rgba(0,0,0,.6)"; g.fillRect(14, 14, 250, 64); g.fillStyle = "#fff"; g.font = "800 34px Archivo, sans-serif"; g.fillText(`${s.total.score ?? "–"}  ${s.total.score == null ? "" : levelOf(s.total.score).name}`, 26, 58);
       g.font = "700 22px Archivo, sans-serif"; g.fillText(phaseAt(s, video.currentTime).toUpperCase(), 18, outH - 22);
     };
     draw(); rec.start();
     video.playbackRate = 0.4;
+    ui.recording = true;
     await video.play();
     await new Promise((res) => {
       const tick = () => { draw(); if (video.currentTime >= s.view_t1 || video.paused) res(); else requestAnimationFrame(tick); };
@@ -551,7 +563,7 @@ async function shareClip() {
     const type = (rec.mimeType || mime || "video/webm").split(";")[0];
     await offerFile(new Blob(chunks, { type }), `swing-${new Date().toISOString().slice(0, 10)}.${type.includes("mp4") ? "mp4" : "webm"}`);
   } catch (e) { console.error(e); toast("Could not record the clip"); }
-  finally { btn.disabled = false; btn.innerHTML = label; video.playbackRate = ui.slow ? 0.3 : 1; }
+  finally { ui.recording = false; btn.disabled = false; btn.innerHTML = label; video.playbackRate = ui.slow ? 0.3 : 1; }
 }
 $("#shareCard").onclick = shareCard;
 $("#shareClip").onclick = shareClip;
@@ -562,7 +574,11 @@ $("#shareClip").onclick = shareClip;
 const Store = {
   mode: "local", db: null, user: null, me: "me", owner: true, ready: null,
   local: lsGet("swinglab:v2", { players: {}, swings: {}, coach: {}, rounds: {} }),
-  flush() { if (!lsSet("swinglab:v2", this.local)) { for (const list of Object.values(this.local.swings)) for (const s of list) delete s.thumbs; lsSet("swinglab:v2", this.local); } },
+  flush() {
+    if (lsSet("swinglab:v2", this.local)) return;
+    const lite = { ...this.local, swings: Object.fromEntries(Object.entries(this.local.swings).map(([k, l]) => [k, l.map(({ thumbs, ...r }) => r)])) };
+    if (!lsSet("swinglab:v2", lite)) throw new Error("Could not save in this browser");
+  },
   async init() {
     try {
       if (window.claude?.use) {
@@ -619,8 +635,9 @@ const Store = {
     else { this.local.rounds[pid] = (this.local.rounds[pid] || []).filter((s) => s.id !== id); this.flush(); }
   },
   async coach(pid) {
-    if (this.mode === "db") { const d = await this.db.doc(`crew/${pid}/meta/coach`).get(); return d.exists ? d.data() : { notes: "", cues: [] }; }
-    return this.local.coach[pid] || { notes: "", cues: [] };
+    // Snapshots from the store are frozen; work on a copy.
+    if (this.mode === "db") { const d = await this.db.doc(`crew/${pid}/meta/coach`).get(); return d.exists ? JSON.parse(JSON.stringify(d.data())) : { notes: "", cues: [] }; }
+    return JSON.parse(JSON.stringify(this.local.coach[pid] || { notes: "", cues: [] }));
   },
   async saveCoach(pid, c) {
     if (this.mode === "db") await this.db.doc(`crew/${pid}/meta/coach`).set(c); else { this.local.coach[pid] = c; this.flush(); }
@@ -655,27 +672,32 @@ function swingRecord(s, opts, sessionId, extra = {}) {
   return {
     at: Date.now(), session: sessionId, club: opts.club, view: s.view, hand: opts.hand, score: s.total.score, partial: !!s.total.partial,
     quality: s.quality.level, tempo: s.ev.tempo.ok ? { back: +s.ev.tempo.back.toFixed(3), down: +s.ev.tempo.down.toFixed(3) } : null,
-    checks, fix: pickFix(s.checks)?.id || null, tags: s.tags || [], thumbs: s.thumbs, ...extra,
+    checks, fix: pickFix(s.checks, s.view)?.id || null, tags: s.tags || [], thumbs: s.thumbs, ...extra,
   };
 }
 async function saveSession(swings, opts, extra) {
+  let saved = false;
   try {
     await Store.ready;
-    if (!canEditPlayer(currentPid)) return;
-    const sessionId = uid();
-    for (const s of swings) s.savedId = await Store.addSwing(currentPid, swingRecord(s, opts, sessionId, extra));
-    await updateStats(currentPid);
-    toast(`Saved ${swings.length} swing${swings.length > 1 ? "s" : ""} to ${currentPlayer()?.id === Store.me ? "your" : (currentPlayer()?.name || "their") + "’s"} progress`);
-    renderResults();   // refresh the fix streak now that history includes these swings
+    if (!canEditPlayer(currentPid)) return false;
+    const pid = currentPid, sessionId = uid();
+    for (const s of swings) { s.savedId = await Store.addSwing(pid, swingRecord(s, opts, sessionId, extra)); s.savedPid = pid; }
+    await updateStats(pid);
+    saved = true;
+    toast(`Saved ${swings.length} swing${swings.length > 1 ? "s" : ""} to ${players.find((x) => x.id === pid)?.id === Store.me ? "your" : (players.find((x) => x.id === pid)?.name || "their") + "’s"} progress`);
   } catch (e) {
     console.error(e);
     toast(e?.code === "quota_exceeded" ? "Storage is full. Delete some old swings in Progress." : "Could not save these swings. Your results are still here.");
   }
+  // Refresh only the fix card's streak (never re-seek or replay the video from here).
+  if (saved && state.result?.swings === swings && !$("#results").hidden) renderFixCard(curSwing());
+  return saved;
 }
 async function updateStats(pid) {
   await loadHistory();
   const p = players.find((x) => x.id === pid) || { id: pid, name: "Me", kind: "self" };
-  const scores = historyCache.map((s) => s.score).filter(Number.isFinite);
+  const full = historyCache.filter((s) => !s.partial && Number.isFinite(s.score));
+  const scores = (full.length ? full : historyCache).map((s) => s.score).filter(Number.isFinite);
   const r18 = roundsCache.map(to18).filter(Number.isFinite);
   p.stats = {
     swings: historyCache.length, best: scores.length ? Math.max(...scores) : null, form: scores.length ? Math.round(mean(scores.slice(0, 10))) : null,
@@ -707,7 +729,9 @@ function fixedMoves() {
    ============================================================ */
 const to18 = (r) => r.holes === 9 ? r.score * 2 : r.score;
 function differential(r) {
-  const rating = r.rating || (r.holes === 9 ? 36 : 72), slope = r.slope || 113;
+  let rating = r.rating || (r.holes === 9 ? 36 : 72);
+  if (r.holes === 9 && rating > 50) rating /= 2;     // an 18-hole rating entered for a 9-hole round
+  const slope = r.slope || 113;
   const d = (113 / slope) * (r.score - rating);
   return r.holes === 9 ? 2 * d : d;
 }
@@ -763,7 +787,7 @@ async function renderProgress() {
     const pts = [...rounds].reverse().map((r) => ({ v: to18(r), label: fmtDate(r.at), title: `${r.course}: ${r.score}${r.holes === 9 ? " (9 holes, doubled)" : ""}` }));
     const vals = pts.map((x) => x.v);
     $("#roundChart").innerHTML = lineChart(pts, { target: 90, yMin: Math.min(80, ...vals) - 4, yMax: Math.max(110, ...vals) + 4, invert: true, label: "Break 90" }) +
-      `<div class="history" style="margin-top:8px">${rounds.slice(0, 8).map((r) => `<div class="hist" style="grid-template-columns:minmax(0,1fr) auto auto"><span><b>${r.score}</b> <span class="muted">· ${esc(r.course)} · ${r.holes} holes · ${fmtDate(r.at)}</span></span><span class="num muted">${r.holes === 9 ? "≈ " + to18(r) : ""}</span>${mine ? `<button class="btn small" data-rdel="${esc(r.id)}">Delete</button>` : "<span></span>"}</div>`).join("")}</div>`;
+      `<div class="history" style="margin-top:8px">${rounds.slice(0, 8).map((r) => `<div class="hist" style="grid-template-columns:minmax(0,1fr) auto auto"><span><b>${esc(r.score)}</b> <span class="muted">· ${esc(r.course)} · ${esc(r.holes)} holes · ${fmtDate(r.at)}</span></span><span class="num muted">${r.holes === 9 ? "≈ " + esc(to18(r)) : ""}</span>${mine ? `<button class="btn small" data-rdel="${esc(r.id)}">Delete</button>` : "<span></span>"}</div>`).join("")}</div>`;
     $$("[data-rdel]").forEach((b) => b.onclick = async () => { if (b.dataset.armed !== "1") { b.dataset.armed = "1"; b.textContent = "Tap to confirm"; return; } await Store.deleteRound(currentPid, b.dataset.rdel); await updateStats(currentPid); renderProgress(); });
   } else {
     $("#roundStats").innerHTML = "";
@@ -780,8 +804,11 @@ async function renderProgress() {
     $$("[data-goto]").forEach((b) => b.onclick = () => switchTab(b.dataset.goto));
     return;
   }
-  const ss = sessions(list);
-  const scores = list.map((s) => s.score).filter(Number.isFinite);
+  const fullList = list.filter((s) => !s.partial && Number.isFinite(s.score));
+  const ss = sessions(fullList.length ? fullList : list);
+  const scores = (fullList.length ? fullList : list).map((s) => s.score).filter(Number.isFinite);
+  if (!ss.length || !scores.length) { $("#stats").innerHTML = ""; $("#levelNow").textContent = ""; $("#chart").innerHTML = `<p class="muted">No scored swings yet. Swings where too little could be measured are listed below without a score.</p>`; }
+  else {
   const form = Math.round(mean(scores.slice(0, 10)));
   $("#levelNow").textContent = scores.length >= 3 ? `Level: ${levelOf(form).name}` : `Level after ${3 - scores.length} more swing${3 - scores.length > 1 ? "s" : ""}`;
   $("#stats").innerHTML = `
@@ -791,6 +818,7 @@ async function renderProgress() {
     <div class="stat"><span class="label">Swings</span><b>${list.length}</b><small>${ss.length} sessions</small></div>`;
   $("#chart").innerHTML = lineChart(ss.map((g) => ({ v: g.score, label: fmtDate(g.at), title: `${fmtDate(g.at)}: session ${g.score}, best ${g.best}, ${g.swings.length} swings` })), { yMin: 0, yMax: 100, target: 55, label: "Breaking 90 level" }) +
     `<p class="note">Session score = your typical swing that day, minus a bit for inconsistency. Repeatable beats one lucky swing.</p>`;
+  }
   // fixed shelf
   const fixed = fixedMoves();
   $("#fixedShelf").innerHTML = fixed.length ? `<div class="chips">${fixed.map((f) => `<span class="chip"><span class="mark good" style="width:22px;height:22px">✓</span>${esc(CHECKS[f.id].name)} <span class="muted">${f.at ? fmtDate(f.at) : ""}</span></span>`).join("")}</div>` : `<p class="muted">None yet. Five good swings in a row on a check moves it here.</p>`;
@@ -805,8 +833,8 @@ async function renderProgress() {
     return `<tr><td>${esc(CHECKS[id].short)}</td><td class="n">${esc(fmtCheck(id, avg(f, id, "v"), {}))}</td><td class="n">${esc(fmtCheck(id, avg(l, id, "v"), {}))}</td><td><span class="mark ${statusOf(ls)}" style="display:inline-grid;width:26px;height:26px">${Math.round(ls)}</span>${arrow}</td></tr>`;
   }).join("")}</tbody></table>`;
   $("#history").innerHTML = list.slice(0, 60).map((s) => `
-    <div class="hist"><img alt="" src="${s.thumbs?.top || ""}">
-      <div><b>${s.score ?? "–"}</b> <span class="muted">· ${esc(s.club || "")} · ${s.view === "face" ? "Face-on" : "Down the line"}${s.tags?.length ? " · " + esc(s.tags.join(", ")) : ""}${s.lesson ? " · lesson" : ""}</span><br>
+    <div class="hist"><img alt="" src="${safeImg(s.thumbs?.top)}">
+      <div><b>${esc(s.score ?? "–")}</b> <span class="muted">· ${esc(s.club || "")} · ${s.view === "face" ? "Face-on" : "Down the line"}${s.tags?.length ? " · " + esc(s.tags.join(", ")) : ""}${s.lesson ? " · lesson" : ""}${s.partial ? " · partial" : ""}</span><br>
       <span class="note">${new Date(s.at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}${s.fix ? " · working on " + esc(CHECKS[s.fix]?.short || "") : ""}</span></div>
       ${mine ? `<button class="btn small" data-del="${esc(s.id)}">Delete</button>` : "<span></span>"}</div>`).join("");
   $$("#history [data-del]").forEach((b) => b.onclick = async () => {
@@ -836,7 +864,7 @@ async function renderCrew() {
   $("#board").innerHTML = `<div class="rank head"><span>#</span><span>Golfer</span><span class="c">Form</span><span class="c">Best</span><span class="c hide-s">Round</span></div>` +
     ranked.map((p, i) => `<div class="rank"><span class="pos">${p.stats?.form != null ? i + 1 : "–"}</span>
       <span class="who">${esc(p.name)}${p.id === Store.me ? '<span class="you">you</span>' : ""}<small>${p.stats?.form != null ? levelOf(p.stats.form).name + " · " : ""}${p.stats?.lastAt ? "active " + fmtDate(p.stats.lastAt) : "no swings yet"}</small></span>
-      <span class="c">${p.stats?.form ?? "–"}</span><span class="c">${p.stats?.best ?? "–"}</span><span class="c hide-s">${p.stats?.bestRound ?? "–"}</span></div>`).join("");
+      <span class="c">${esc(p.stats?.form ?? "–")}</span><span class="c">${esc(p.stats?.best ?? "–")}</span><span class="c hide-s">${esc(p.stats?.bestRound ?? "–")}</span></div>`).join("");
   $("#meName").value = players.find((p) => p.id === Store.me)?.name || "";
   $("#addGuestPanel").hidden = !Store.owner;
   $("#crewNote").textContent = Store.mode === "db" ? "Share this lab with your crew (as Contributor or Editor) and they post their own swings here." : "Running locally: the board lives in this browser.";
@@ -867,7 +895,8 @@ async function renderCoach() {
   const recent = historyCache.slice(0, 10);
   const loss = {};
   for (const s of recent) for (const [id, c] of Object.entries(s.checks || {})) if (c.m && CHECKS[id]) (loss[id] ||= []).push((100 - c.s) * CHECKS[id].prio * BUCKETS[CHECKS[id].bucket].weight * (CHECKS[id].conf === "low" ? 0.5 : 1));
-  const top = Object.entries(loss).map(([id, a]) => [id, mean(a)]).filter(([, v]) => v > 200).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  const meanScore = (id) => mean(recent.filter((s) => s.checks?.[id]?.m).map((s) => s.checks[id].s));
+  const top = Object.entries(loss).map(([id, a]) => [id, mean(a)]).filter(([id, v]) => v > 200 && meanScore(id) < 80).sort((a, b) => b[1] - a[1]).slice(0, 3);
   $("#plan").innerHTML = top.length ? top.map(([id], i) => {
     const d = CHECKS[id]; const vals = recent.filter((s) => s.checks?.[id]?.m);
     const v = mean(vals.map((s) => s.checks[id].v)), sc = mean(vals.map((s) => s.checks[id].s));
@@ -905,12 +934,12 @@ function renderCues() {
 let coachSaving = Promise.resolve();
 function persistCoach() {
   coachDoc.updatedAt = Date.now();
-  const snap = JSON.parse(JSON.stringify(coachDoc));
-  coachSaving = coachSaving.then(() => Store.saveCoach(currentPid, snap)).catch(() => toast("Could not save notes"));
+  const snap = JSON.parse(JSON.stringify(coachDoc)), pid = currentPid;
+  coachSaving = coachSaving.then(() => Store.saveCoach(pid, snap)).then(() => true, () => { toast("Could not save notes"); return false; });
   return coachSaving;
 }
 $("#cueForm").onsubmit = (e) => { e.preventDefault(); const t = $("#cueText").value.trim(); if (!t) return; (coachDoc.cues ||= []).push({ text: t, done: false, at: Date.now() }); $("#cueText").value = ""; persistCoach(); renderCues(); };
-$("#saveNotes").onclick = async () => { coachDoc.notes = $("#notes").value; await persistCoach(); $("#notesState").textContent = "Saved just now"; };
+$("#saveNotes").onclick = async () => { coachDoc.notes = $("#notes").value; if (await persistCoach()) $("#notesState").textContent = "Saved just now"; };
 
 function renderChat() {
   $("#chat").innerHTML = chatTurns.length ? chatTurns.map((t) => `<div class="msg ${t.role === "user" ? "me" : "ai"}">${esc(t.content)}</div>`).join("")
@@ -938,7 +967,9 @@ $("#lessonFile").onchange = async () => {
   if (!file) return;
   const out = $("#lessonOut");
   try { await Engines.ready; } catch { return; }
-  const opts = { view: $("#view").value, hand: $("#hand").value, slow: +$("#slowmo").value, club: settings.club, heightCm: +$("#heightCm").value || 178, coarseStep: 0.3 };
+  const opts = { view: $("#view").value, hand: $("#hand").value, slow: +$("#slowmo").value, club: settings.club, heightCm: heightFor(currentPlayer()), coarseStep: 0.3 };
+  // Lesson mode uses the same video player, so clear any swing results on the Swing tab.
+  state.result = null; video.pause(); $("#results").hidden = true; $("#intake").hidden = false;
   out.innerHTML = `<div class="working"><div class="meter"><i id="lessonBar"></i></div><p class="note" id="lessonNote">Scanning the lesson…</p></div>`;
   try {
     const res = await analyzeClip(file, opts, { progress: (pct, step, note) => { $("#lessonBar").style.width = pct + "%"; $("#lessonNote").textContent = note + ` · ${Math.round(pct)}%`; } });
@@ -950,7 +981,7 @@ $("#lessonFile").onchange = async () => {
     $("#lessonSave").onclick = async () => {
       const keep = $$("[data-li]").filter((c) => c.checked).map((c) => res.swings[+c.dataset.li]);
       if (!keep.length) return;
-      await saveSession(keep, opts, { lesson: true });
+      if (await saveSession(keep, opts, { lesson: true })) $("#lessonSave").disabled = true;
       $("#lessonSummary").innerHTML = lessonSummary(keep);
     };
   } catch (e) { out.innerHTML = `<div class="err">${esc(e.message || String(e))}</div>`; }
@@ -990,7 +1021,6 @@ async function renderActiveTab() {
   if (activeTab === "coach") renderCoach();
 }
 $$("[data-tab]").forEach((t) => t.onclick = () => switchTab(t.dataset.tab));
-if (["progress", "crew", "coach"].includes(location.hash.slice(1))) switchTab(location.hash.slice(1));
 renderClubChips();
 summariseSettings();
 
@@ -1000,8 +1030,9 @@ function exportAnalysis() {
     times: Object.fromEntries(Object.entries(s.times).map(([k, v]) => [k, +v.toFixed(3)])), topPeakT: s.ev.topPeakT, tempo: s.ev.tempo, hold: s.ev.hold, downFrames: s.ev.downFrames, audioImpact: !!s.ev.audioImpact,
     quality: { level: s.quality.level, issues: s.quality.issues.map((x) => x.key) }, fps: s.fps, stride: s.stride, pxPerCm: +s.pxPerCm.toFixed(3), notes: s.notes,
     checks: Object.fromEntries(Object.entries(s.checks).map(([id, c]) => [id, { value: c.value, score: c.score, measured: c.measured, vis: c.vis, display: fmtCheck(id, c.value, c) }])),
-    fix: pickFix(s.checks)?.id || null, strength: pickStrength(s.checks)?.id || null,
+    fix: pickFix(s.checks, s.view)?.id || null, strength: pickStrength(s.checks, s.view)?.id || null,
   }));
 }
 window.__swingLab = { analyze, state, engines: Engines, exportAnalysis, last: null };
 Store.ready = Store.init().then(refreshPlayers).then(loadHistory).catch((e) => console.warn(e));
+if (["progress", "crew", "coach"].includes(location.hash.slice(1))) switchTab(location.hash.slice(1));
