@@ -414,7 +414,10 @@ function findEvents(series, slow, lead) {
   const torso = median(series.map((f) => dist(mid(f.kp.lsho, f.kp.rsho), mid(f.kp.lhip, f.kp.rhip))));
   if (!(torso > 8)) return fail("body too small");
   const hand = series.map((f) => handCentre(f.kp));
-  const H = series.map((f, i) => (mid(f.kp.lhip, f.kp.rhip).y - hand[i].y) / torso);
+  // Hand height against a fixed reference (the hips' typical height in this window), so hips rising
+  // through impact (normal in good players) do not make the hands look lower than they are.
+  const hipRef = median(series.map((f) => mid(f.kp.lhip, f.kp.rhip).y));
+  const H = series.map((f, i) => (hipRef - hand[i].y) / torso);
   const dH = H.map((_, i) => { const a = Math.max(0, i - 1), b = Math.min(n - 1, i + 1); return (H[b] - H[a]) / ((rt[b] - rt[a]) || 1); });
   const speed = hand.map((p, i) => { const a = Math.max(0, i - 2), b = Math.min(n - 1, i + 2); return dist(hand[a], hand[b]) / torso / ((rt[b] - rt[a]) || 1); });
   const bodyKeys = ["nose", "lsho", "rsho", "lhip", "rhip", "lwri", "rwri", "lank", "rank"];
@@ -435,6 +438,7 @@ function findEvents(series, slow, lead) {
     if (follow) { p = c; top = tp; break; }
   }
   if (p < 0) return fail("no downswing found");
+  let peak = top; for (let j = top; j >= 0 && H[j] >= H[top] - 0.08; j--) if (H[j] > H[peak]) peak = j;
   // Sub-frame top: parabola through the hand heights around the top frame.
   let topT = series[top].t;
   if (top > 0 && top < n - 1) {
@@ -470,7 +474,7 @@ function findEvents(series, slow, lead) {
   if (halfDown < 0) halfDown = Math.min(n - 1, top + Math.max(1, Math.round((p - top) / 2)));
 
   // Impact: after halfway down, hands return to address height (interpolated), 0.12-0.6 s after the top.
-  const Haddr = (median(addrFrames.map((j) => mid(series[j].kp.lhip, series[j].kp.rhip).y)) - hAddr.y) / torso;
+  const Haddr = (hipRef - hAddr.y) / torso;
   const target = Haddr + 0.08;
   let impact = -1, impactT = NaN;
   for (let j = Math.max(top + 1, halfDown); j < n; j++) {
@@ -502,7 +506,7 @@ function findEvents(series, slow, lead) {
     torso, rt, H, bodyH,
     tempo: { back: (topT - takeT) / slow, down: (impactT - topT) / slow, ok: takeawayFound && impact > top + 1 },
     hold: { secs: rt[holdEnd] - rt[finish], cut: holdEnd === n - 1, measurable: holdEnd < n - 1 ? tailAfterFinish >= 0.6 || rt[holdEnd] - rt[finish] >= 0.3 : rt[holdEnd] - rt[finish] >= 1.6 },
-    downFrames: impact - top,
+    downFrames: impact - top, topPeakT: series[peak].t,
   };
 }
 

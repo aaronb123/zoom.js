@@ -997,7 +997,7 @@ summariseSettings();
 function exportAnalysis() {
   return state.result.swings.map((s) => ({
     score: s.total.score, partial: s.total.partial, capped: s.total.capped, buckets: s.total.buckets, view: s.view, viewRatio: +s.viewInfo.ratio.toFixed(2),
-    times: Object.fromEntries(Object.entries(s.times).map(([k, v]) => [k, +v.toFixed(3)])), tempo: s.ev.tempo, hold: s.ev.hold, downFrames: s.ev.downFrames, audioImpact: !!s.ev.audioImpact,
+    times: Object.fromEntries(Object.entries(s.times).map(([k, v]) => [k, +v.toFixed(3)])), topPeakT: s.ev.topPeakT, tempo: s.ev.tempo, hold: s.ev.hold, downFrames: s.ev.downFrames, audioImpact: !!s.ev.audioImpact,
     quality: { level: s.quality.level, issues: s.quality.issues.map((x) => x.key) }, fps: s.fps, stride: s.stride, pxPerCm: +s.pxPerCm.toFixed(3), notes: s.notes,
     checks: Object.fromEntries(Object.entries(s.checks).map(([id, c]) => [id, { value: c.value, score: c.score, measured: c.measured, vis: c.vis, display: fmtCheck(id, c.value, c) }])),
     fix: pickFix(s.checks)?.id || null, strength: pickStrength(s.checks)?.id || null,
