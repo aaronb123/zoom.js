@@ -1039,12 +1039,12 @@ function findEvents(series, slow, lead, slowAuto = false) {
   const pos = series.map((f) => handCentre(f.kp));
   const bodyRef = median(series.map((f) => Math.max(f.kp.lank.y, f.kp.rank.y) - Math.min(f.kp.nose.y, f.kp.lear.y, f.kp.rear.y))) || 4 * torso;
   // Still address: some 0.25 s (real) stretch near i where the hands stay within ~5% of body height.
-  const stillNear = (i, backS) => {
+  const stillNear = (i, backS, maxH = Infinity) => {
     const win = Math.max(3, Math.round(0.25 * slow / Math.max(1e-3, median(series.slice(1).map((f, k) => f.t - series[k].t)))));
     for (let a = i; a >= 0 && within(i, a, backS, backS * 2); a--) {
       const b = Math.min(n - 1, a + win);
       const pts = pos.slice(a, b + 1), mx = median(pts.map((q) => q.x)), my = median(pts.map((q) => q.y));
-      if (pts.every((q) => Math.hypot(q.x - mx, q.y - my) < 0.05 * bodyRef)) return a;
+      if (pts.every((q) => Math.hypot(q.x - mx, q.y - my) < 0.05 * bodyRef) && mean(H.slice(a, b + 1)) <= maxH) return a;
     }
     return -1;
   };
@@ -1064,7 +1064,8 @@ function findEvents(series, slow, lead, slowAuto = false) {
     // A real swing rises from a still address. A finish being lowered or relaxed rises from impact, where the
     // hands fly through and are never still.
     let lowB = tp; for (let j = tp; j >= 0 && within(j, tp, 3, 8); j--) if (H[j] < H[lowB]) lowB = j;
-    const stillB = stillNear(Math.min(tp, lowB + 3), 1.2) >= 0;
+    // ...and the still moment must be low (hands near setup height), not the pause at the top of a slo-mo backswing.
+    const stillB = stillNear(Math.min(tp, lowB + 3), 1.2, H[lowB] + 0.25 * (H[tp] - H[lowB])) >= 0;
     if (follow && stillB && H[tp] - H[lowB] > 0.7 && !cands.some((x) => x[1] === tp)) cands.push([c, tp]);
   }
   if (!cands.length) return fail("no downswing found");
@@ -1142,16 +1143,21 @@ function findEvents(series, slow, lead, slowAuto = false) {
   }
   if (impact < 0) { impact = p; for (let j = p; j < n && within(j, p, 0.35, 0.8); j++) if (H[j] < H[impact]) impact = j; impactT = series[impact].t; }
 
-  // Finish: first 0.3 s after impact where the whole body is still. The hold runs until it moves again.
-  let finish = -1;
+  // Finish: the held pose after impact. Take the first still stretch that lasts 0.5 s (real), else the longest;
+  // a brief pause while the club is still swinging round does not count. The hold is that stretch.
+  const stillAt = (k) => bodySpeed[k] < 0.35 && speed[k] < 0.8 && H[k] > Math.max(0.2, 0.45 * H[top]);
+  const segs = [];
   for (let j = impact; j < n; j++) {
     if (rt[j] - rt[impact] < 0.2) continue;
-    let k = j; while (k < n && bodySpeed[k] < 0.35 && speed[k] < 0.8 && rt[k] - rt[j] < 0.3) k++;
-    if (k < n && rt[k] - rt[j] >= 0.3 && H[j] > Math.max(0.2, 0.45 * H[top])) { finish = j; break; }
-    if (k === n && rt[n - 1] - rt[j] >= 0.15 && bodySpeed[j] < 0.35) { finish = j; break; }
+    if (!stillAt(j)) continue;
+    let k = j; while (k + 1 < n && stillAt(k + 1)) k++;
+    segs.push([j, k]); j = k;
   }
-  if (finish < 0) { finish = impact; for (let j = impact; j < n; j++) if (H[j] > H[finish]) finish = j; }
-  let holdEnd = finish; while (holdEnd < n - 1 && bodySpeed[holdEnd + 1] < 0.5) holdEnd++;
+  const dur = ([a, b]) => rt[b] - rt[a];
+  let seg = segs.find((g) => dur(g) >= 0.5) || segs.reduce((best, g) => (!best || dur(g) > dur(best) ? g : best), null);
+  let finish, holdEnd;
+  if (seg && dur(seg) >= 0.1) { finish = seg[0]; holdEnd = seg[1]; while (holdEnd < n - 1 && bodySpeed[holdEnd + 1] < 0.5) holdEnd++; }
+  else { finish = impact; for (let j = impact; j < n; j++) if (H[j] > H[finish]) finish = j; holdEnd = finish; }
   const tailAfterFinish = rt[n - 1] - rt[finish];
 
   return {
