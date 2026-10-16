@@ -432,7 +432,7 @@ $("#speakBtn").onclick = () => { const s = curSwing(); if (!speak(spokenSummary(
 /* ---------- Coach Claude on this swing ---------- */
 let coachCtl = null;
 function swingFacts(s) {
-  const rows = Object.entries(s.checks).map(([id, c]) => `- ${CHECKS[id].name} (${CHECKS[id].short}): ${c.measured ? fmtCheck(id, c.value, c) + `, score ${c.score}/100` : "not measured"}; tour range ${fmtCheck(id, (id === "stance" ? stanceAnchors(state.opts.club) : CHECKS[id].anchors).tour[0], {})} to ${fmtCheck(id, (id === "stance" ? stanceAnchors(state.opts.club) : CHECKS[id].anchors).tour[1], {})}`).join("\n");
+  const rows = Object.entries(s.checks).map(([id, c]) => `- ${CHECKS[id].name} (${CHECKS[id].short}): ${c.measured ? fmtCheck(id, c.value, c) + `, score ${c.score}/100` : "not measured"}; tour range ${fmtCheck(id, anchorsFor(id, state.opts.club).tour[0], {})} to ${fmtCheck(id, anchorsFor(id, state.opts.club).tour[1], {})}`).join("\n");
   return `Camera: ${s.view === "face" ? "face-on" : "down the line"}. Club: ${state.opts.club}. Handed: ${state.opts.hand === "L" ? "left" : "right"}.
 Overall swing score: ${s.total.score} (${levelOf(s.total.score ?? 0).name})${s.total.capped ? "; " + s.total.capped : ""}.
 Tracking quality: ${s.quality.level}${s.quality.issues.length ? " — " + s.quality.issues.map((x) => x.text).join(" ") : ""}.

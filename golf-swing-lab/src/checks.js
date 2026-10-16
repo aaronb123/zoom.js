@@ -25,7 +25,7 @@ const CHECKS = {
   },
   posture: {
     name: "Staying in your posture", short: "Posture", view: "dtl", bucket: "contact", prio: 10, conf: "med", unit: "°", event: "impact",
-    anchors: { centre: 2, tour: [0, 5], amateur: [-6, 8], beginner: 15, beginnerLo: -12 },
+    anchors: { centre: 3, tour: [-1, 7], amateur: [-7, 10], beginner: 16, beginnerLo: -12 },   // 2D trunk line: shoulders opening at impact read as ~2-3° of "loss"
     good: "You stayed bent over through the hit, so the club came back to the ball.",
     hi: "You stand up through the hit (early extension), so the club rises off the ball.",
     lo: "You dip down toward the ball through the hit.",
@@ -113,8 +113,8 @@ const CHECKS = {
     explain: "The angle at your front elbow at the top. 180° is dead straight.",
   },
   shoulderPlane: {
-    name: "Shoulders tilting, not spinning flat", short: "Shoulder tilt", view: "dtl", bucket: "backswing", prio: 4, conf: "med", unit: "°", event: "top",
-    anchors: { centre: 36, tour: [30, 42], amateur: [28, 44], beginner: 25 },
+    name: "Shoulders tilting, not spinning flat", short: "Shoulder tilt", view: "dtl", bucket: "backswing", prio: 4, conf: "low", unit: "°", event: "top",
+    anchors: { centre: 34, tour: [26, 42], amateur: [22, 46], beginner: 17 },   // GolfTEC sensor values mapped to a 2D line: estimate
     good: "Your shoulders turned on a nice tilt, front shoulder down toward the ball.",
     lo: "Your shoulders turn too flat, round rather than down.",
     hi: "Your shoulders tilt very steeply.",
@@ -124,7 +124,7 @@ const CHECKS = {
   },
   spineAddress: {
     name: "Bending over the right amount", short: "Setup posture", view: "dtl", bucket: "setup", prio: 6, conf: "med", unit: "°", event: "address",
-    anchors: { centre: 37.5, tour: [30, 45], amateur: [28, 48], beginner: 22, beginnerHi: 55 },
+    anchors: null,  // depends on the club, see spineAnchors()
     good: "Athletic setup with a good bend from the hips.",
     lo: "You stand too upright at setup. Bend from your hips so your arms can hang.",
     hi: "You are hunched over a lot at setup.",
@@ -134,7 +134,7 @@ const CHECKS = {
   },
   kneeFlex: {
     name: "Soft knees at setup", short: "Knee flex", view: "dtl", bucket: "setup", prio: 3, conf: "high", unit: "°", event: "address",
-    anchors: { centre: 20, tour: [15, 25], amateur: [12, 30], beginner: 6, beginnerHi: 42 },
+    anchors: { centre: 20, tour: [13, 28], amateur: [9, 34], beginner: 4, beginnerHi: 45 },   // literature: 18 ± 12° lead, 17 ± 9° trail
     good: "Nicely flexed, athletic knees.",
     lo: "Your knees are nearly locked at setup.",
     hi: "You are squatting at setup.",
@@ -229,6 +229,13 @@ function stanceAnchors(club) {
   const centre = c === "driver" ? 1.25 : c === "wedge" ? 0.92 : 1.07;
   return { centre, tour: [centre - 0.08, centre + 0.08], amateur: [centre - 0.15, centre + 0.15], beginner: centre - 0.32, beginnerHi: centre + 0.32 };
 }
+/* GolfTEC tour forward bend: about 30-40° with irons, 29-35° with the driver. */
+function spineAnchors(club) {
+  return clubKind(club) === "driver"
+    ? { centre: 33, tour: [28, 38], amateur: [25, 44], beginner: 20, beginnerHi: 52 }
+    : { centre: 37.5, tour: [30, 45], amateur: [27, 48], beginner: 22, beginnerHi: 55 };
+}
+function anchorsFor(id, club) { return id === "stance" ? stanceAnchors(club) : id === "spineAddress" ? spineAnchors(club) : CHECKS[id].anchors; }
 function clubKind(club) {
   const s = String(club || "").toLowerCase();
   if (s.includes("driver") || s.includes("wood") || s.includes("hybrid")) return "driver";
@@ -297,7 +304,7 @@ function computeChecks(series, ev, opts, viewInfo) {
   const put = (id, value, vis, extra = {}) => {
     const d = CHECKS[id];
     if (!Number.isFinite(value)) return;
-    const anchors = id === "stance" ? stanceAnchors(opts.club) : d.anchors;
+    const anchors = anchorsFor(id, opts.club);
     const measured = vis >= 0.8;
     let score = anchorScore(value, anchors);
     if (d.conf === "low") score = Math.min(85, score);
@@ -311,10 +318,11 @@ function computeChecks(series, ev, opts, viewInfo) {
     const plausible = t.back >= 0.45 && t.back <= 1.8 && t.down >= 0.16 && t.down <= 0.65;
     if (!plausible) notes.push("Swing timing looks off for real time (backswing " + t.back.toFixed(2) + " s, downswing " + t.down.toFixed(2) + " s). If this is slo-mo, set “Recorded at”.");
     if (opts.slowGuessed) notes.push(`This looks like slo-mo (about ×${opts.slow}). Rhythm is shown as a ratio only, and phone slo-mo that speeds up and slows down can still skew it.`);
-    put("tempo", t.back / t.down, ev.downFrames >= 6 || ev.audioImpact ? 1 : 0.8, { precise: !opts.slowGuessed && (ev.downFrames >= 10 || !!ev.audioImpact) });
+    // Guessed slo-mo: phone slo-mo often ramps speed, so the ratio is shown but not scored.
+    put("tempo", t.back / t.down, opts.slowGuessed ? 0 : ev.downFrames >= 6 || ev.audioImpact ? 1 : 0.8, { precise: !opts.slowGuessed && (ev.downFrames >= 10 || !!ev.audioImpact) });
   }
   // Balance
-  if ((!ev.hold.cut || ev.hold.secs >= 1.6) && !opts.slowGuessed) put("finishHold", ev.hold.secs, 1, { lowerBound: ev.hold.cut });
+  if (ev.hold.measurable && !opts.slowGuessed) put("finishHold", ev.hold.secs, 1, { lowerBound: ev.hold.cut });
 
   // Head height (both views): positive = head rose.
   {
@@ -446,7 +454,7 @@ function adviceFor(id, c, club) {
   const d = CHECKS[id];
   if (c.score >= 70) return d.good;
   if (id === "posture" && c.drivenBy === "hips") return "Your hips push toward the ball through the hit, which jams your arms (early extension).";
-  const a = id === "stance" ? stanceAnchors(club) : d.anchors;
+  const a = anchorsFor(id, club);
   return c.value < a.centre ? (d.lo || d.hi) : (d.hi || d.lo);
 }
 function fmtCheck(id, v, c) {
@@ -464,7 +472,7 @@ function fmtCheck(id, v, c) {
 }
 /* Bar scale for a check: the shaded band is the good-amateur-to-tour range; the ends sit past the beginner values. */
 function checkScale(id, club) {
-  const a = id === "stance" ? stanceAnchors(club) : CHECKS[id].anchors;
+  const a = anchorsFor(id, club);
   const c = a.centre;
   const begLo = a.beginner < c ? a.beginner : a.beginnerLo, begHi = a.beginner > c ? a.beginner : a.beginnerHi;
   const lo = Number.isFinite(begLo) ? c - 1.35 * (c - begLo) : a.amateur[0] - 0.8 * (c - a.amateur[0] || 1);

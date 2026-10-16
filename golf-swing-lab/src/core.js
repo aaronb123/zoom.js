@@ -451,13 +451,11 @@ function findEvents(series, slow, lead) {
   const addrFrames = []; for (let j = lowI; j >= 0 && rt[lowI] - rt[j] <= 0.3; j--) addrFrames.push(j);
   const hAddr = { x: median(addrFrames.map((j) => hand[j].x)), y: median(addrFrames.map((j) => hand[j].y)) };
   const thr = 0.03 * bodyH;
+  // Takeaway = the last moment the hands were still at their address spot before the top. Scanning back from the
+  // top means a forward press or waggle that returns to address is skipped automatically.
   let take = lowI;
-  for (let j = lowI; j < top; j++) {
-    if (dist(hand[j], hAddr) > thr) {
-      // Must keep progressing to the top within 1.6 s (real time).
-      if (rt[top] - rt[j] <= 1.6) { take = Math.max(0, j - 1); break; }
-    }
-  }
+  for (let j = top - 1; j >= Math.max(0, lowI - 1); j--) { if (dist(hand[j], hAddr) <= thr) { take = j; break; } }
+  if (rt[top] - rt[take] > 1.8) { for (let j = take; j < top; j++) if (rt[top] - rt[j] <= 1.8) { take = j; break; } }
   const d0 = dist(hand[take], hAddr), d1 = dist(hand[Math.min(take + 1, n - 1)], hAddr);
   const takeT = lerpT(take, Math.min(take + 1, n - 1), (thr - d0) / ((d1 - d0) || 1));
   const takeawayFound = take > 0 || addrFrames.length > 2;
@@ -496,13 +494,14 @@ function findEvents(series, slow, lead) {
   }
   if (finish < 0) { finish = impact; for (let j = impact; j < n; j++) if (H[j] > H[finish]) finish = j; }
   let holdEnd = finish; while (holdEnd < n - 1 && bodySpeed[holdEnd + 1] < 0.5) holdEnd++;
+  const tailAfterFinish = rt[n - 1] - rt[finish];
 
   return {
     idx: { address, takeaway: take, halfBack, top, halfDown, impact, finish },
     times: { address: series[address].t, takeaway: takeT, halfBack: series[halfBack].t, top: topT, halfDown: series[halfDown].t, impact: impactT, finish: series[finish].t },
     torso, rt, H, bodyH,
     tempo: { back: (topT - takeT) / slow, down: (impactT - topT) / slow, ok: takeawayFound && impact > top + 1 },
-    hold: { secs: rt[holdEnd] - rt[finish], cut: holdEnd === n - 1 },
+    hold: { secs: rt[holdEnd] - rt[finish], cut: holdEnd === n - 1, measurable: holdEnd < n - 1 ? tailAfterFinish >= 0.6 || rt[holdEnd] - rt[finish] >= 0.3 : rt[holdEnd] - rt[finish] >= 1.6 },
     downFrames: impact - top,
   };
 }
@@ -561,10 +560,11 @@ function assessQuality(series, ev, W, Hpx, viewInfo, fps) {
   if (realFps < 50 && ev.downFrames < 9) issues.push({ key: "fps", text: `This clip is about ${Math.round(fps)} fps, so the downswing is only ${ev.downFrames} frames and rhythm is rough. Film at 60 fps or in slo-mo.` });
   if (viewInfo.unclear) issues.push({ key: "angle", text: "The camera is at an in-between angle. Film straight face-on or straight down the line for reliable numbers." });
   // Planted feet should not move between setup and impact; if they do, the camera moved.
-  // Planted points: the lead foot (heel and toe) and the trail toe. The trail heel lifts at impact in a good swing.
+  // A moving camera shifts every planted point together, while one hidden foot point just jitters. So take the
+  // smallest movement among the planted points (lead ankle, heel, toe and trail toe; the trail heel lifts at impact).
   const B = series[ev.idx.impact].kp, ld = ev.lead || "l", tr = ld === "l" ? "r" : "l";
-  const footDrift = Math.max(dist(A[ld + "heel"], B[ld + "heel"]), dist(A[ld + "toe"], B[ld + "toe"]), dist(A[tr + "toe"], B[tr + "toe"])) / (ev.bodyH || 1);
-  if (footDrift > 0.035) issues.push({ key: "camera", text: "The camera (or your feet) moved during the swing, so side-to-side readings are switched off. Prop the phone on something solid." });
+  const footDrift = Math.min(...[ld + "ank", ld + "heel", ld + "toe", tr + "toe", tr + "ank"].map((k) => dist(A[k], B[k]))) / (ev.bodyH || 1);
+  if (footDrift > 0.04) issues.push({ key: "camera", text: "The camera (or your feet) moved during the swing, so side-to-side readings are switched off. Prop the phone on something solid." });
   if (viewInfo.view === "face") {
     const tilt = Math.abs(deg(Math.atan2(A.lank.y - A.rank.y, Math.abs(A.lank.x - A.rank.x))));
     const shL = dist(A.lkne, A.lank), shR = dist(A.rkne, A.rank);

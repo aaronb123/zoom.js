@@ -1061,13 +1061,11 @@ function findEvents(series, slow, lead) {
   const addrFrames = []; for (let j = lowI; j >= 0 && rt[lowI] - rt[j] <= 0.3; j--) addrFrames.push(j);
   const hAddr = { x: median(addrFrames.map((j) => hand[j].x)), y: median(addrFrames.map((j) => hand[j].y)) };
   const thr = 0.03 * bodyH;
+  // Takeaway = the last moment the hands were still at their address spot before the top. Scanning back from the
+  // top means a forward press or waggle that returns to address is skipped automatically.
   let take = lowI;
-  for (let j = lowI; j < top; j++) {
-    if (dist(hand[j], hAddr) > thr) {
-      // Must keep progressing to the top within 1.6 s (real time).
-      if (rt[top] - rt[j] <= 1.6) { take = Math.max(0, j - 1); break; }
-    }
-  }
+  for (let j = top - 1; j >= Math.max(0, lowI - 1); j--) { if (dist(hand[j], hAddr) <= thr) { take = j; break; } }
+  if (rt[top] - rt[take] > 1.8) { for (let j = take; j < top; j++) if (rt[top] - rt[j] <= 1.8) { take = j; break; } }
   const d0 = dist(hand[take], hAddr), d1 = dist(hand[Math.min(take + 1, n - 1)], hAddr);
   const takeT = lerpT(take, Math.min(take + 1, n - 1), (thr - d0) / ((d1 - d0) || 1));
   const takeawayFound = take > 0 || addrFrames.length > 2;
@@ -1106,13 +1104,14 @@ function findEvents(series, slow, lead) {
   }
   if (finish < 0) { finish = impact; for (let j = impact; j < n; j++) if (H[j] > H[finish]) finish = j; }
   let holdEnd = finish; while (holdEnd < n - 1 && bodySpeed[holdEnd + 1] < 0.5) holdEnd++;
+  const tailAfterFinish = rt[n - 1] - rt[finish];
 
   return {
     idx: { address, takeaway: take, halfBack, top, halfDown, impact, finish },
     times: { address: series[address].t, takeaway: takeT, halfBack: series[halfBack].t, top: topT, halfDown: series[halfDown].t, impact: impactT, finish: series[finish].t },
     torso, rt, H, bodyH,
     tempo: { back: (topT - takeT) / slow, down: (impactT - topT) / slow, ok: takeawayFound && impact > top + 1 },
-    hold: { secs: rt[holdEnd] - rt[finish], cut: holdEnd === n - 1 },
+    hold: { secs: rt[holdEnd] - rt[finish], cut: holdEnd === n - 1, measurable: holdEnd < n - 1 ? tailAfterFinish >= 0.6 || rt[holdEnd] - rt[finish] >= 0.3 : rt[holdEnd] - rt[finish] >= 1.6 },
     downFrames: impact - top,
   };
 }
@@ -1171,10 +1170,11 @@ function assessQuality(series, ev, W, Hpx, viewInfo, fps) {
   if (realFps < 50 && ev.downFrames < 9) issues.push({ key: "fps", text: `This clip is about ${Math.round(fps)} fps, so the downswing is only ${ev.downFrames} frames and rhythm is rough. Film at 60 fps or in slo-mo.` });
   if (viewInfo.unclear) issues.push({ key: "angle", text: "The camera is at an in-between angle. Film straight face-on or straight down the line for reliable numbers." });
   // Planted feet should not move between setup and impact; if they do, the camera moved.
-  // Planted points: the lead foot (heel and toe) and the trail toe. The trail heel lifts at impact in a good swing.
+  // A moving camera shifts every planted point together, while one hidden foot point just jitters. So take the
+  // smallest movement among the planted points (lead ankle, heel, toe and trail toe; the trail heel lifts at impact).
   const B = series[ev.idx.impact].kp, ld = ev.lead || "l", tr = ld === "l" ? "r" : "l";
-  const footDrift = Math.max(dist(A[ld + "heel"], B[ld + "heel"]), dist(A[ld + "toe"], B[ld + "toe"]), dist(A[tr + "toe"], B[tr + "toe"])) / (ev.bodyH || 1);
-  if (footDrift > 0.035) issues.push({ key: "camera", text: "The camera (or your feet) moved during the swing, so side-to-side readings are switched off. Prop the phone on something solid." });
+  const footDrift = Math.min(...[ld + "ank", ld + "heel", ld + "toe", tr + "toe", tr + "ank"].map((k) => dist(A[k], B[k]))) / (ev.bodyH || 1);
+  if (footDrift > 0.04) issues.push({ key: "camera", text: "The camera (or your feet) moved during the swing, so side-to-side readings are switched off. Prop the phone on something solid." });
   if (viewInfo.view === "face") {
     const tilt = Math.abs(deg(Math.atan2(A.lank.y - A.rank.y, Math.abs(A.lank.x - A.rank.x))));
     const shL = dist(A.lkne, A.lank), shR = dist(A.rkne, A.rank);
@@ -1331,7 +1331,7 @@ const CHECKS = {
   },
   posture: {
     name: "Staying in your posture", short: "Posture", view: "dtl", bucket: "contact", prio: 10, conf: "med", unit: "°", event: "impact",
-    anchors: { centre: 2, tour: [0, 5], amateur: [-6, 8], beginner: 15, beginnerLo: -12 },
+    anchors: { centre: 3, tour: [-1, 7], amateur: [-7, 10], beginner: 16, beginnerLo: -12 },   // 2D trunk line: shoulders opening at impact read as ~2-3° of "loss"
     good: "You stayed bent over through the hit, so the club came back to the ball.",
     hi: "You stand up through the hit (early extension), so the club rises off the ball.",
     lo: "You dip down toward the ball through the hit.",
@@ -1419,8 +1419,8 @@ const CHECKS = {
     explain: "The angle at your front elbow at the top. 180° is dead straight.",
   },
   shoulderPlane: {
-    name: "Shoulders tilting, not spinning flat", short: "Shoulder tilt", view: "dtl", bucket: "backswing", prio: 4, conf: "med", unit: "°", event: "top",
-    anchors: { centre: 36, tour: [30, 42], amateur: [28, 44], beginner: 25 },
+    name: "Shoulders tilting, not spinning flat", short: "Shoulder tilt", view: "dtl", bucket: "backswing", prio: 4, conf: "low", unit: "°", event: "top",
+    anchors: { centre: 34, tour: [26, 42], amateur: [22, 46], beginner: 17 },   // GolfTEC sensor values mapped to a 2D line: estimate
     good: "Your shoulders turned on a nice tilt, front shoulder down toward the ball.",
     lo: "Your shoulders turn too flat, round rather than down.",
     hi: "Your shoulders tilt very steeply.",
@@ -1430,7 +1430,7 @@ const CHECKS = {
   },
   spineAddress: {
     name: "Bending over the right amount", short: "Setup posture", view: "dtl", bucket: "setup", prio: 6, conf: "med", unit: "°", event: "address",
-    anchors: { centre: 37.5, tour: [30, 45], amateur: [28, 48], beginner: 22, beginnerHi: 55 },
+    anchors: null,  // depends on the club, see spineAnchors()
     good: "Athletic setup with a good bend from the hips.",
     lo: "You stand too upright at setup. Bend from your hips so your arms can hang.",
     hi: "You are hunched over a lot at setup.",
@@ -1440,7 +1440,7 @@ const CHECKS = {
   },
   kneeFlex: {
     name: "Soft knees at setup", short: "Knee flex", view: "dtl", bucket: "setup", prio: 3, conf: "high", unit: "°", event: "address",
-    anchors: { centre: 20, tour: [15, 25], amateur: [12, 30], beginner: 6, beginnerHi: 42 },
+    anchors: { centre: 20, tour: [13, 28], amateur: [9, 34], beginner: 4, beginnerHi: 45 },   // literature: 18 ± 12° lead, 17 ± 9° trail
     good: "Nicely flexed, athletic knees.",
     lo: "Your knees are nearly locked at setup.",
     hi: "You are squatting at setup.",
@@ -1535,6 +1535,13 @@ function stanceAnchors(club) {
   const centre = c === "driver" ? 1.25 : c === "wedge" ? 0.92 : 1.07;
   return { centre, tour: [centre - 0.08, centre + 0.08], amateur: [centre - 0.15, centre + 0.15], beginner: centre - 0.32, beginnerHi: centre + 0.32 };
 }
+/* GolfTEC tour forward bend: about 30-40° with irons, 29-35° with the driver. */
+function spineAnchors(club) {
+  return clubKind(club) === "driver"
+    ? { centre: 33, tour: [28, 38], amateur: [25, 44], beginner: 20, beginnerHi: 52 }
+    : { centre: 37.5, tour: [30, 45], amateur: [27, 48], beginner: 22, beginnerHi: 55 };
+}
+function anchorsFor(id, club) { return id === "stance" ? stanceAnchors(club) : id === "spineAddress" ? spineAnchors(club) : CHECKS[id].anchors; }
 function clubKind(club) {
   const s = String(club || "").toLowerCase();
   if (s.includes("driver") || s.includes("wood") || s.includes("hybrid")) return "driver";
@@ -1603,7 +1610,7 @@ function computeChecks(series, ev, opts, viewInfo) {
   const put = (id, value, vis, extra = {}) => {
     const d = CHECKS[id];
     if (!Number.isFinite(value)) return;
-    const anchors = id === "stance" ? stanceAnchors(opts.club) : d.anchors;
+    const anchors = anchorsFor(id, opts.club);
     const measured = vis >= 0.8;
     let score = anchorScore(value, anchors);
     if (d.conf === "low") score = Math.min(85, score);
@@ -1617,10 +1624,11 @@ function computeChecks(series, ev, opts, viewInfo) {
     const plausible = t.back >= 0.45 && t.back <= 1.8 && t.down >= 0.16 && t.down <= 0.65;
     if (!plausible) notes.push("Swing timing looks off for real time (backswing " + t.back.toFixed(2) + " s, downswing " + t.down.toFixed(2) + " s). If this is slo-mo, set “Recorded at”.");
     if (opts.slowGuessed) notes.push(`This looks like slo-mo (about ×${opts.slow}). Rhythm is shown as a ratio only, and phone slo-mo that speeds up and slows down can still skew it.`);
-    put("tempo", t.back / t.down, ev.downFrames >= 6 || ev.audioImpact ? 1 : 0.8, { precise: !opts.slowGuessed && (ev.downFrames >= 10 || !!ev.audioImpact) });
+    // Guessed slo-mo: phone slo-mo often ramps speed, so the ratio is shown but not scored.
+    put("tempo", t.back / t.down, opts.slowGuessed ? 0 : ev.downFrames >= 6 || ev.audioImpact ? 1 : 0.8, { precise: !opts.slowGuessed && (ev.downFrames >= 10 || !!ev.audioImpact) });
   }
   // Balance
-  if ((!ev.hold.cut || ev.hold.secs >= 1.6) && !opts.slowGuessed) put("finishHold", ev.hold.secs, 1, { lowerBound: ev.hold.cut });
+  if (ev.hold.measurable && !opts.slowGuessed) put("finishHold", ev.hold.secs, 1, { lowerBound: ev.hold.cut });
 
   // Head height (both views): positive = head rose.
   {
@@ -1752,7 +1760,7 @@ function adviceFor(id, c, club) {
   const d = CHECKS[id];
   if (c.score >= 70) return d.good;
   if (id === "posture" && c.drivenBy === "hips") return "Your hips push toward the ball through the hit, which jams your arms (early extension).";
-  const a = id === "stance" ? stanceAnchors(club) : d.anchors;
+  const a = anchorsFor(id, club);
   return c.value < a.centre ? (d.lo || d.hi) : (d.hi || d.lo);
 }
 function fmtCheck(id, v, c) {
@@ -1770,7 +1778,7 @@ function fmtCheck(id, v, c) {
 }
 /* Bar scale for a check: the shaded band is the good-amateur-to-tour range; the ends sit past the beginner values. */
 function checkScale(id, club) {
-  const a = id === "stance" ? stanceAnchors(club) : CHECKS[id].anchors;
+  const a = anchorsFor(id, club);
   const c = a.centre;
   const begLo = a.beginner < c ? a.beginner : a.beginnerLo, begHi = a.beginner > c ? a.beginner : a.beginnerHi;
   const lo = Number.isFinite(begLo) ? c - 1.35 * (c - begLo) : a.amateur[0] - 0.8 * (c - a.amateur[0] || 1);
@@ -2215,7 +2223,7 @@ $("#speakBtn").onclick = () => { const s = curSwing(); if (!speak(spokenSummary(
 /* ---------- Coach Claude on this swing ---------- */
 let coachCtl = null;
 function swingFacts(s) {
-  const rows = Object.entries(s.checks).map(([id, c]) => `- ${CHECKS[id].name} (${CHECKS[id].short}): ${c.measured ? fmtCheck(id, c.value, c) + `, score ${c.score}/100` : "not measured"}; tour range ${fmtCheck(id, (id === "stance" ? stanceAnchors(state.opts.club) : CHECKS[id].anchors).tour[0], {})} to ${fmtCheck(id, (id === "stance" ? stanceAnchors(state.opts.club) : CHECKS[id].anchors).tour[1], {})}`).join("\n");
+  const rows = Object.entries(s.checks).map(([id, c]) => `- ${CHECKS[id].name} (${CHECKS[id].short}): ${c.measured ? fmtCheck(id, c.value, c) + `, score ${c.score}/100` : "not measured"}; tour range ${fmtCheck(id, anchorsFor(id, state.opts.club).tour[0], {})} to ${fmtCheck(id, anchorsFor(id, state.opts.club).tour[1], {})}`).join("\n");
   return `Camera: ${s.view === "face" ? "face-on" : "down the line"}. Club: ${state.opts.club}. Handed: ${state.opts.hand === "L" ? "left" : "right"}.
 Overall swing score: ${s.total.score} (${levelOf(s.total.score ?? 0).name})${s.total.capped ? "; " + s.total.capped : ""}.
 Tracking quality: ${s.quality.level}${s.quality.issues.length ? " — " + s.quality.issues.map((x) => x.text).join(" ") : ""}.
