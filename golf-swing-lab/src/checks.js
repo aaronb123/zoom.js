@@ -35,8 +35,8 @@ const CHECKS = {
   },
   headHeight: {
     name: "Head at the same height", short: "Head height", view: "both", bucket: "contact", prio: 9, conf: "med", unit: "cm", event: "impact",
-    anchors: { centre: -1.3, tour: [-5, 2.5], amateur: [-7.6, 3.8], beginner: 7.6, beginnerLo: -10 },
-    good: "Your head stayed level, so you stayed the same distance from the ball.",
+    anchors: { centre: -4, tour: [-9, 1], amateur: [-12, 4], beginner: 7.6, beginnerLo: -17 },   // tour heads drop a few cm by impact
+    good: "Your head stayed level or dipped slightly, like the pros, so you stayed the same distance from the ball.",
     hi: "Your head rises by the hit. You are standing up or lifting to watch the ball.",
     lo: "Your head drops toward the ball through the hit.",
     ball: "Rising gives tops and thin shots. Dropping gives fat shots.",
@@ -103,25 +103,6 @@ const CHECKS = {
     drill: "Make backswings in a mirror with a club across your shoulders. Keep your head behind your belt buckle at the top.",
     explain: "The tilt of your trunk at the top. Plus means leaning away from the target.",
   },
-  leadArm: {
-    name: "Front arm fairly straight at the top", short: "Lead arm", view: "face", bucket: "backswing", prio: 5, conf: "med", unit: "°", event: "top",
-    anchors: { centre: 170, tour: [160, 180], amateur: [150, 180], beginner: 120 },
-    good: "Your front arm stayed wide at the top.",
-    lo: "Your front arm folds at the top, so the swing narrows and gets handsy.",
-    ball: "A collapsing arm gives thin and fat contact and loses distance.",
-    drill: "L-to-L swings: swing back only until your front arm is level with the ground, elbow straight, then through to the mirror position.",
-    explain: "The angle at your front elbow at the top. 180° is dead straight.",
-  },
-  shoulderPlane: {
-    name: "Shoulders tilting, not spinning flat", short: "Shoulder tilt", view: "dtl", bucket: "backswing", prio: 4, conf: "low", unit: "°", event: "top",
-    anchors: { centre: 34, tour: [26, 42], amateur: [22, 46], beginner: 17 },   // GolfTEC sensor values mapped to a 2D line: estimate
-    good: "Your shoulders turned on a nice tilt, front shoulder down toward the ball.",
-    lo: "Your shoulders turn too flat, round rather than down.",
-    hi: "Your shoulders tilt very steeply.",
-    ball: "Flat shoulders lead to over-the-top swings and slices.",
-    drill: "In posture with a club across your shoulders, turn back so the shaft points at the ground just beyond the ball.",
-    explain: "How steeply your shoulder line tilts at the top, seen from behind.",
-  },
   spineAddress: {
     name: "Bending over the right amount", short: "Setup posture", view: "dtl", bucket: "setup", prio: 6, conf: "med", unit: "°", event: "address",
     anchors: null,  // depends on the club, see spineAnchors()
@@ -181,26 +162,6 @@ const CHECKS = {
     drill: "Hold every finish until the ball lands. If you cannot, swing at 70% until you can.",
     explain: "How long you held a still, balanced finish.",
   },
-  shoulderTurn: {
-    name: "Full shoulder turn", short: "Shoulder turn", view: "face", bucket: "power", prio: 4, conf: "low", unit: "°", event: "top",
-    anchors: { centre: 95, tour: [88, 102], amateur: [80, 110], beginner: 68 },
-    good: "Full shoulder turn, back to the target.",
-    lo: "Your shoulders are not turning fully. The arms are doing the work.",
-    hi: "Very big shoulder turn. Fine if you stay balanced.",
-    ball: "A short turn mostly costs distance, and often goes with over-the-top swings.",
-    drill: "With a club across your chest, turn until it points at the ground beyond the ball and your back faces the target.",
-    explain: "Estimate of how far your shoulders turned by the top (2D camera, about ±10°).",
-  },
-  hipTurn: {
-    name: "Hip turn going back", short: "Hip turn", view: "face", bucket: "power", prio: 4, conf: "low", unit: "°", event: "top",
-    anchors: { centre: 42, tour: [38, 47], amateur: [32, 52], beginner: 58, beginnerLo: 20 },
-    good: "Hips turned about half as much as your shoulders. Good coil.",
-    lo: "Your hips are locked going back.",
-    hi: "Your hips over-rotate going back, which loses coil.",
-    ball: "Mostly a power issue.",
-    drill: "Keep your back knee flexed as you turn back. The hips turn, the knee does not straighten.",
-    explain: "Estimate of how far your hips turned by the top (2D camera, about ±12°).",
-  },
 };
 
 const BUCKETS = {
@@ -210,7 +171,6 @@ const BUCKETS = {
   setup: { name: "Setup", weight: 10 },
   rhythm: { name: "Rhythm", weight: 10 },
   finish: { name: "Finish", weight: 5 },
-  power: { name: "Power", weight: 5 },
 };
 
 const LEVELS = [
@@ -226,8 +186,8 @@ const LADDER = LEVELS.slice(0, 4);   // what one camera angle can show; Single f
 
 function stanceAnchors(club) {
   const c = clubKind(club);
-  const centre = c === "driver" ? 1.25 : c === "wedge" ? 0.92 : 1.07;
-  return { centre, tour: [centre - 0.08, centre + 0.08], amateur: [centre - 0.15, centre + 0.15], beginner: centre - 0.32, beginnerHi: centre + 0.32 };
+  const centre = c === "driver" ? 1.38 : c === "wedge" ? 1.06 : 1.22;   // ankle gap / shoulder-joint width (joint centres sit inside the shoulders)
+  return { centre, tour: [centre - 0.1, centre + 0.1], amateur: [centre - 0.2, centre + 0.2], beginner: centre - 0.4, beginnerHi: centre + 0.4 };
 }
 /* GolfTEC tour forward bend: about 30-40° with irons, 29-35° with the driver. */
 function spineAnchors(club) {
@@ -354,19 +314,14 @@ function computeChecks(series, ev, opts, viewInfo) {
     put("hipSway", cm(-(hipT.x - hipA.x) * dir), vis(idx.top, hips));
     put("headSway", cm(-(headAt(T, kT).x - headAt(A, kT).x) * dir), vis(idx.top, kT, 0.4));
     put("spineTop", deg(Math.atan2((shoT.x - hipT.x) * -dir, hipT.y - shoT.y)), vis(idx.top, [...hips, "lsho", "rsho"]));
-    const elbow = angleAt(T[L("sho")], T[L("elb")], T[L("wri")]);
-    put("leadArm", elbow, vis(idx.top, [L("sho"), L("elb"), L("wri")], 0.6), { category: elbow >= 160 ? "straight" : elbow >= 140 ? "soft" : "bent" });
+    // Lead arm, shoulder turn and hip turn are not scored: from one 2D camera, validation clips of tour players
+    // read the same as amateurs (foreshortening and occlusion at the top).
     // Stance and finish use the address ankles: feet stay planted.
     const ankL = A[L("ank")], ankR = A[R("ank")];
     const sw = Math.abs(A.lsho.x - A.rsho.x);
     put("stance", Math.abs(ankL.x - ankR.x) / sw, vis(idx.address, ["lank", "rank", "lsho", "rsho"]));
     const span = ankL.x - ankR.x;
     if (Math.abs(span) > 5) put("finishPos", (hipF.x - ankR.x) / span, vis(idx.finish, [...hips]));
-    // Turns from the signed horizontal widths: cos(turn) = width at top / width at setup.
-    const sdx = (kp, part) => (kp[L(part)].x - kp[R(part)].x) * dir;
-    const turn = (part) => deg(Math.acos(clamp(sdx(T, part) / sdx(A, part), -1, 1)));
-    if (Math.abs(sdx(A, "sho")) > 5) put("shoulderTurn", turn("sho"), vis(idx.top, ["lsho", "rsho"], 0.4));
-    if (Math.abs(sdx(A, "hip")) > 5) put("hipTurn", turn("hip"), vis(idx.top, hips, 0.3));
   } else {
     const hipA = mid(A.lhip, A.rhip), hipI = mid(I.lhip, I.rhip);
     const handA = mid(A.lwri, A.rwri);
@@ -384,9 +339,6 @@ function computeChecks(series, ev, opts, viewInfo) {
     // Near (trail) leg is the clearer one from behind.
     const near = A.rank.y >= A.lank.y ? "r" : "l";
     put("kneeFlex", 180 - angleAt(A[near + "hip"], A[near + "kne"], A[near + "ank"]), vis(idx.address, [near + "hip", near + "kne", near + "ank"]));
-    // Shoulder tilt at the top: lead shoulder below the trail shoulder.
-    const ls = T[L("sho")], ts = T[R("sho")];
-    put("shoulderPlane", deg(Math.atan2(ls.y - ts.y, Math.abs(ls.x - ts.x))), vis(idx.top, ["lsho", "rsho"], 0.4));
     // Over-the-top proxy: hand position as the hands pass hip height going back vs coming down.
     const crossX = (from, to) => {
       for (let j = from; j !== to; j += Math.sign(to - from)) {

@@ -9,8 +9,8 @@ const STAGES = [
   { name: "Setup and balance", checks: ["spineAddress", "kneeFlex", "stance", "finishHold"] },
   { name: "Stay centred", checks: ["headSway", "hipSway", "headHeight"] },
   { name: "Keep your posture", checks: ["posture", "spineTop"] },
-  { name: "Turn and transfer", checks: ["weightShift", "finishPos", "leadArm", "shoulderTurn", "hipTurn"] },
-  { name: "Strike and direction", checks: ["stayBehind", "headImpact", "overTop", "shoulderPlane"] },
+  { name: "Turn and transfer", checks: ["weightShift", "finishPos"] },
+  { name: "Strike and direction", checks: ["stayBehind", "headImpact", "overTop"] },
   { name: "Rhythm and repeat", checks: ["tempo"] },
 ];
 const ui = { lines: true, slow: true, numbers: false };
