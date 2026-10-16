@@ -462,7 +462,7 @@ const CONFIG = {
     "https://cdnjs.cloudflare.com/ajax/libs/tensorflow/4.22.0/tf.min.js",
     "./vendor/tf.min.js",
   ],
-  movenet: "./models/movenet-thunder.json",
+  movenet: ["./models/movenet-thunder", "./models/movenet-lightning"],
 };
 const TORSO_CM = 50;          // shoulder-to-hip distance used to turn pixels into rough centimetres
 const KEYS = ["nose", "lsho", "rsho", "lelb", "relb", "lwri", "rwri", "lhip", "rhip", "lkne", "rkne", "lank", "rank"];
@@ -496,6 +496,15 @@ function loadScript(src) {
     s.onload = res; s.onerror = () => rej(new Error("Could not load " + src)); document.head.appendChild(s);
   });
 }
+/* Binary files ship as-is locally; the artifact host only serves text, so they are also published base64 as <name>.b64.txt. */
+async function fetchBinary(url) {
+  try { const r = await fetch(url); if (r.ok) return new Uint8Array(await r.arrayBuffer()); } catch {}
+  const r = await fetch(url + ".b64.txt");
+  if (!r.ok) throw new Error("Missing " + url);
+  const bin = atob((await r.text()).trim()), out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
 const fmtDate = (ms) => new Date(ms).toLocaleDateString(undefined, { day: "numeric", month: "short" });
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 
@@ -508,9 +517,7 @@ async function initMediaPipe() {
     try { vision = await import(bundle); loader = ldr; break; } catch (e) { lastErr = e; }
   }
   if (!vision) throw lastErr || new Error("MediaPipe unavailable");
-  const res = await fetch(CONFIG.mpModel);
-  if (!res.ok) throw new Error("Pose model missing");
-  const modelAssetBuffer = new Uint8Array(await res.arrayBuffer());
+  const modelAssetBuffer = await fetchBinary(CONFIG.mpModel);
   const fileset = { wasmLoaderPath: loader, wasmBinaryPath: CONFIG.mpWasm };
   const make = (delegate) => vision.PoseLandmarker.createFromOptions(fileset, {
     baseOptions: { modelAssetBuffer, delegate }, runningMode: "IMAGE", numPoses: 1,
@@ -539,8 +546,17 @@ async function initMoveNet() {
   const tf = window.tf; if (!tf) throw new Error("TensorFlow.js unavailable");
   try { await tf.setBackend("webgl"); } catch { await tf.setBackend("cpu"); }
   await tf.ready();
-  const model = await tf.loadGraphModel(CONFIG.movenet);
-  const S = 256;
+  let model = null, S = 256;
+  for (const base of CONFIG.movenet) {
+    try {
+      const json = await (await fetch(base + ".json")).json();
+      const weightData = (await fetchBinary(base + ".bin")).buffer;
+      model = await tf.loadGraphModel(tf.io.fromMemory({ modelTopology: json.modelTopology, weightSpecs: json.weightsManifest[0].weights, weightData }));
+      S = +json.signature.inputs["input:0"].tensorShape.dim[1].size || 256;
+      break;
+    } catch (e) { console.warn("MoveNet load failed", base, e); }
+  }
+  if (!model) throw new Error("MoveNet model unavailable");
   let crop = null;
   const fullBox = (W, H) => { const s = Math.max(W, H); return { x: (W - s) / 2, y: (H - s) / 2, s }; };
   function run(canvas, box) {
