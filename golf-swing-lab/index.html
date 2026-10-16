@@ -1,0 +1,1516 @@
+<title>Swing Lab</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: launch-monitor console. Sticky header + tabs, one working column that splits into viewer | readout on wide screens. Scorecard marks (circle / plain / square) encode metric status. */
+:root {
+  --bg: #eef2ee;
+  --surface: #ffffff;
+  --sunk: #e3e9e4;
+  --ink: #0f1d17;
+  --muted: #56675e;
+  --line: #d3dcd5;
+  --accent: #1d5a3a;
+  --accent-ink: #ffffff;
+  --flag: #e0482c;
+  --good: #1f7a46;
+  --ok: #b07a12;
+  --work: #c23a26;
+  --trail-back: #2f6fd6;
+  --trail-down: #e0482c;
+  --font-display: "Archivo", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --r: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0b1310; --surface: #121c18; --sunk: #0e1714; --ink: #e6eee8; --muted: #8fa198; --line: #22322a;
+    --accent: #5cc98b; --accent-ink: #06130c; --flag: #ff6b4f; --good: #5cc98b; --ok: #e3b04b; --work: #ff7a63;
+    --trail-back: #6aa4ff; --trail-down: #ff6b4f; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0b1310; --surface: #121c18; --sunk: #0e1714; --ink: #e6eee8; --muted: #8fa198; --line: #22322a;
+  --accent: #5cc98b; --accent-ink: #06130c; --flag: #ff6b4f; --good: #5cc98b; --ok: #e3b04b; --work: #ff7a63;
+  --trail-back: #6aa4ff; --trail-down: #ff6b4f; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.5; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--surface); }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; line-height: 1.1; }
+.num { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+.label { font-size: 11px; text-transform: uppercase; letter-spacing: .09em; color: var(--muted); font-weight: 600; }
+.muted { color: var(--muted); }
+
+/* header */
+.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--surface); border-bottom: 1px solid var(--line); }
+.bar-in { max-width: 1180px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 10px 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.brand { display: flex; align-items: baseline; gap: 10px; margin-right: auto; }
+.brand h1 { font-size: 22px; font-weight: 850; font-variation-settings: "wdth" 118; letter-spacing: -.01em; }
+.brand h1 span { color: var(--flag); }
+.engine { font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
+.engine i { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); display: inline-block; }
+.engine[data-state="ready"] i { background: var(--good); }
+.engine[data-state="error"] i { background: var(--work); }
+.tabs { display: flex; gap: 4px; width: 100%; overflow-x: auto; scrollbar-width: none; }
+.tab { border: 0; background: none; padding: 10px 12px 11px; font-weight: 600; color: var(--muted); border-bottom: 3px solid transparent; white-space: nowrap; font-family: var(--font-display); font-variation-settings: "wdth" 100; letter-spacing: .01em; }
+.tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--flag); }
+
+main { max-width: 1180px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 20px 64px; }
+section.view { display: grid; gap: 20px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 18px; min-width: 0; }
+.panel h2 { font-size: 18px; font-weight: 800; font-variation-settings: "wdth" 110; }
+.row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 8px 14px; font-weight: 600; }
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn.small { padding: 5px 10px; font-size: 13px; }
+.btn[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.field { display: grid; gap: 4px; min-width: 0; }
+.field select, .field input, textarea { background: var(--sunk); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-width: 0; }
+
+/* intake */
+.intake { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 20px; }
+.drop { display: grid; place-items: center; text-align: center; gap: 10px; border: 2px dashed var(--line); border-radius: var(--r); padding: 36px 18px; background: var(--sunk); cursor: pointer; transition: border-color .15s; }
+.drop:hover, .drop.over { border-color: var(--accent); }
+.drop h2 { font-size: clamp(22px, 4vw, 30px); font-weight: 850; font-variation-settings: "wdth" 115; }
+.drop input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-top: 16px; }
+.guide ol { margin: 10px 0 0; padding-left: 20px; display: grid; gap: 8px; }
+.guide li::marker { font-family: var(--font-data); color: var(--flag); }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 14px; font-size: 13px; }
+.legend span { display: inline-flex; gap: 6px; align-items: center; }
+
+/* progress */
+.working { display: grid; gap: 10px; }
+.meter { height: 8px; background: var(--sunk); border-radius: 99px; overflow: hidden; }
+.meter i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+
+/* results */
+.strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+.chip { border: 1px solid var(--line); background: var(--surface); border-radius: 99px; padding: 6px 12px; white-space: nowrap; display: inline-flex; gap: 8px; align-items: center; font-weight: 600; }
+.chip[aria-pressed="true"] { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.report { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+.viewer { display: grid; gap: 10px; justify-items: center; }
+.stage { position: relative; background: #000; border-radius: var(--r); overflow: hidden; max-width: 100%; }
+.stage video, .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.controls { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.phase-btn { font-family: var(--font-display); font-variation-settings: "wdth" 90; }
+.readout { display: grid; gap: 16px; }
+.scorebox { display: grid; grid-template-columns: auto 1fr; gap: 18px; align-items: center; }
+.ring { width: 118px; height: 118px; }
+.ring text { font-family: var(--font-display); font-weight: 850; fill: var(--ink); }
+.verdict h2 { font-size: 22px; }
+.tempo { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.tempo div { background: var(--surface); padding: 10px 12px; display: grid; gap: 2px; }
+.tempo b { font-family: var(--font-data); font-size: 20px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.focus { border: 1px solid var(--flag); border-radius: var(--r); padding: 16px; display: grid; gap: 8px; background: color-mix(in srgb, var(--flag) 6%, var(--surface)); }
+.focus .label { color: var(--flag); }
+.focus h3 { font-size: 19px; }
+.focus p { margin: 0; }
+.metrics { display: grid; gap: 0; }
+.metric { display: grid; grid-template-columns: 32px minmax(0, 1.1fr) minmax(0, 1fr) 92px; gap: 6px 14px; align-items: center; padding: 12px 0; border-top: 1px solid var(--line); }
+.metric:first-child { border-top: 0; }
+.metric .name { font-weight: 600; }
+.metric .name small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; }
+.metric .val { text-align: right; font-family: var(--font-data); font-variant-numeric: tabular-nums; font-size: 15px; }
+.metric .tip { grid-column: 2 / -1; font-size: 13.5px; color: var(--muted); margin: 0; }
+.track { position: relative; height: 10px; background: var(--sunk); border-radius: 99px; }
+.track .band { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, var(--good) 28%, transparent); border-radius: 99px; }
+.track .dot { position: absolute; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: var(--ink); border: 2px solid var(--surface); }
+.mark { width: 30px; height: 30px; display: grid; place-items: center; font-family: var(--font-data); font-size: 10.5px; font-weight: 500; }
+.mark.good { border: 2px solid var(--good); border-radius: 50%; color: var(--good); }
+.mark.ok { color: var(--ok); border: 2px solid transparent; }
+.mark.work { border: 2px solid var(--work); color: var(--work); border-radius: 3px; }
+.mark.na { color: var(--muted); }
+.frames { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.frames figure { margin: 0; display: grid; gap: 4px; }
+.frames img { width: 100%; border-radius: 6px; background: var(--sunk); aspect-ratio: 3 / 4; object-fit: cover; }
+.frames figcaption { font-size: 12px; color: var(--muted); text-align: center; }
+.note { font-size: 13px; color: var(--muted); }
+.toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: var(--surface); padding: 10px 16px; border-radius: 8px; font-weight: 600; z-index: 20; max-width: calc(100% - 32px); }
+.err { border: 1px solid var(--work); color: var(--work); border-radius: 8px; padding: 12px 14px; background: color-mix(in srgb, var(--work) 7%, var(--surface)); }
+
+/* progress tab */
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; }
+.stat { display: grid; gap: 2px; }
+.stat b { font-family: var(--font-display); font-size: 30px; font-weight: 850; font-variation-settings: "wdth" 112; font-variant-numeric: tabular-nums; }
+.chart { width: 100%; height: auto; display: block; }
+.chart text { font-family: var(--font-data); font-size: 11px; fill: var(--muted); }
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 9px 10px; border-top: 1px solid var(--line); white-space: nowrap; }
+th { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; border-top: 0; }
+td.n { font-family: var(--font-data); font-variant-numeric: tabular-nums; text-align: right; }
+th.n { text-align: right; }
+.history { display: grid; gap: 8px; }
+.hist { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
+.hist img { width: 56px; height: 72px; object-fit: cover; border-radius: 6px; background: var(--sunk); }
+.empty { text-align: center; padding: 36px 16px; display: grid; gap: 8px; justify-items: center; }
+.empty h3 { font-size: 20px; }
+
+/* crew */
+.board { display: grid; gap: 0; }
+.rank { display: grid; grid-template-columns: 36px minmax(0, 1fr) repeat(3, 72px); gap: 10px; align-items: center; padding: 12px 0; border-top: 1px solid var(--line); }
+.rank:first-child { border-top: 0; }
+.rank .pos { font-family: var(--font-display); font-weight: 850; font-size: 22px; font-variation-settings: "wdth" 112; }
+.rank .who { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rank .who small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; }
+.rank .c { text-align: right; font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+.rank.head { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; padding-top: 0; }
+.rank.head .c { font-family: var(--font-body); }
+.you { color: var(--flag); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; margin-left: 6px; }
+
+/* coach */
+.cues { display: grid; gap: 6px; }
+.cue { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
+.cue input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent); }
+.cue.done span { text-decoration: line-through; color: var(--muted); }
+textarea { width: 100%; min-height: 140px; resize: vertical; line-height: 1.5; }
+.plan { display: grid; gap: 12px; }
+.plan article { display: grid; gap: 4px; padding: 12px 0; border-top: 1px solid var(--line); }
+.plan article:first-child { border-top: 0; }
+.two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+
+@media (max-width: 860px) {
+  .intake, .report, .two { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 520px) {
+  .metric { grid-template-columns: 32px minmax(0, 1fr) 80px; }
+  .metric .track { grid-column: 2 / -1; grid-row: 2; }
+  .metric .tip { grid-row: 3; }
+  .frames { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rank { grid-template-columns: 28px minmax(0, 1fr) 54px 54px; }
+  .rank .c.hide-s { display: none; }
+  .scorebox { grid-template-columns: minmax(0, 1fr); justify-items: start; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<header class="bar">
+  <div class="bar-in">
+    <div class="brand">
+      <h1>Swing<span>/</span>Lab</h1>
+      <span class="engine" id="engine" data-state="loading"><i></i><span id="engineText">Loading pose model…</span></span>
+    </div>
+    <div class="field" style="grid-auto-flow: column; align-items: center; gap: 8px;">
+      <label class="label" for="golfer">Golfer</label>
+      <select id="golfer"></select>
+    </div>
+    <nav class="tabs" role="tablist">
+      <button class="tab" role="tab" aria-selected="true" data-tab="analyze" id="t-analyze">Analyze</button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="progress" id="t-progress">Progress</button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="crew" id="t-crew">Crew</button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="coach" id="t-coach">Coach</button>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <!-- ANALYZE -->
+  <section class="view" id="v-analyze">
+    <div class="intake" id="intake">
+      <div class="panel">
+        <label class="drop" id="drop" for="file">
+          <span class="label">Step 1</span>
+          <h2>Drop a swing video</h2>
+          <span class="muted">MP4 or MOV from your phone. Up to a couple of minutes. One swing or a whole bucket.</span>
+          <span class="btn primary">Choose video</span>
+          <input type="file" id="file" accept="video/*">
+        </label>
+        <div class="settings">
+          <div class="field">
+            <label class="label" for="view">Camera angle</label>
+            <select id="view">
+              <option value="auto">Auto-detect</option>
+              <option value="face">Face-on</option>
+              <option value="dtl">Down the line</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="label" for="hand">Plays</label>
+            <select id="hand">
+              <option value="R">Right-handed</option>
+              <option value="L">Left-handed</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="label" for="slowmo">Recorded at</label>
+            <select id="slowmo">
+              <option value="1">Normal speed</option>
+              <option value="4">Slo-mo 120 fps</option>
+              <option value="8">Slo-mo 240 fps</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="label" for="club">Club</label>
+            <select id="club">
+              <option>7 iron</option><option>Driver</option><option>3 wood</option><option>Hybrid</option>
+              <option>5 iron</option><option>6 iron</option><option>8 iron</option><option>9 iron</option>
+              <option>Pitching wedge</option><option>Sand wedge</option>
+            </select>
+          </div>
+        </div>
+        <p class="note">Your video never leaves your phone. Pose tracking runs in the browser, and only the scores and four small key frames are saved.</p>
+      </div>
+      <div class="panel guide">
+        <h2>Film it so the numbers mean something</h2>
+        <ol>
+          <li><b>Pick one angle.</b> Face-on: phone straight in front of your chest. Down the line: behind your hands, pointing at the target.</li>
+          <li><b>Whole body plus club in frame</b>, about 3–4 m away, phone at hip-to-chest height on a stand or bag.</li>
+          <li><b>Landscape or portrait both work.</b> Use 60 fps if your camera has it. If you shoot slo-mo, set “Recorded at” to match.</li>
+          <li><b>One person in shot.</b> At Topgolf, film from the side of the bay so the next bay is out of frame.</li>
+          <li><b>Hold your finish</b> for a couple of seconds. The lab scores balance too.</li>
+        </ol>
+        <div class="legend" aria-label="How marks read">
+          <span><i class="mark good">◦</i> On target</span>
+          <span><i class="mark ok">–</i> Close</span>
+          <span><i class="mark work">!</i> Work on it</span>
+        </div>
+        <p class="note">Marks follow the scorecard: circled is a birdie, boxed is a bogey.</p>
+      </div>
+    </div>
+
+    <div class="panel working" id="working" hidden>
+      <div class="row" style="justify-content: space-between;">
+        <h2 id="workTitle">Reading your swing…</h2>
+        <span class="num muted" id="workPct">0%</span>
+      </div>
+      <div class="meter"><i id="workBar"></i></div>
+      <p class="note" id="workNote">Finding each swing in the clip.</p>
+    </div>
+
+    <div id="errorBox" class="err" hidden></div>
+
+    <div id="results" hidden>
+      <div class="view" style="display: grid; gap: 20px;">
+        <div class="row" style="justify-content: space-between;">
+          <div class="strip" id="strip" role="group" aria-label="Swings in this clip"></div>
+          <button class="btn small" id="newClip">New video</button>
+        </div>
+        <div class="report">
+          <div class="panel viewer">
+            <div class="stage" id="stage">
+              <video id="video" playsinline muted preload="auto"></video>
+              <canvas id="overlay"></canvas>
+            </div>
+            <div class="controls" id="phaseBtns"></div>
+            <div class="controls">
+              <button class="btn small" id="prevF" aria-label="Previous frame">◀ Frame</button>
+              <button class="btn small" id="play">Play</button>
+              <button class="btn small" id="nextF" aria-label="Next frame">Frame ▶</button>
+              <button class="btn small" id="speed" aria-pressed="true">¼ speed</button>
+              <button class="btn small" id="trail" aria-pressed="true">Hand path</button>
+              <button class="btn small" id="guides" aria-pressed="true">Guides</button>
+            </div>
+            <p class="note" id="viewerNote"></p>
+          </div>
+          <div class="readout">
+            <div class="panel scorebox">
+              <svg class="ring" viewBox="0 0 120 120" aria-hidden="true">
+                <circle cx="60" cy="60" r="52" fill="none" stroke="var(--sunk)" stroke-width="10"></circle>
+                <circle id="ringArc" cx="60" cy="60" r="52" fill="none" stroke="var(--accent)" stroke-width="10" stroke-linecap="round" transform="rotate(-90 60 60)" stroke-dasharray="0 999"></circle>
+                <text id="ringNum" x="60" y="66" text-anchor="middle" font-size="36">–</text>
+                <text x="60" y="84" text-anchor="middle" font-size="9" style="fill: var(--muted); font-weight: 600; letter-spacing: .12em;">SCORE</text>
+              </svg>
+              <div class="verdict">
+                <span class="label" id="swingMeta"></span>
+                <h2 id="verdict"></h2>
+                <p class="muted" id="verdictSub" style="margin: 6px 0 0;"></p>
+              </div>
+            </div>
+            <div class="tempo" id="tempoBox"></div>
+            <div class="focus" id="focus"></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="row" style="justify-content: space-between; margin-bottom: 6px;">
+            <h2>Breakdown</h2>
+            <span class="note" id="metricNote"></span>
+          </div>
+          <div class="metrics" id="metrics"></div>
+        </div>
+        <div class="panel">
+          <h2 style="margin-bottom: 12px;">Key positions</h2>
+          <div class="frames" id="frames"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PROGRESS -->
+  <section class="view" id="v-progress" hidden>
+    <div class="panel">
+      <div class="row" style="justify-content: space-between;">
+        <h2 id="progTitle">Progress</h2>
+        <span class="note" id="storeNote"></span>
+      </div>
+      <div class="stats" id="stats" style="margin-top: 14px;"></div>
+    </div>
+    <div class="panel">
+      <h2>Swing score by session</h2>
+      <p class="note" style="margin: 4px 0 10px;">Dots are session averages. The line under it is your best swing that day.</p>
+      <div id="chart"></div>
+    </div>
+    <div class="panel">
+      <h2 style="margin-bottom: 8px;">Where you have moved</h2>
+      <div class="table-wrap" id="trendTable"></div>
+    </div>
+    <div class="panel">
+      <h2 style="margin-bottom: 8px;">Saved swings</h2>
+      <div class="history" id="history"></div>
+    </div>
+  </section>
+
+  <!-- CREW -->
+  <section class="view" id="v-crew" hidden>
+    <div class="panel">
+      <div class="row" style="justify-content: space-between;">
+        <div>
+          <h2>Crew leaderboard</h2>
+          <p class="note" style="margin: 4px 0 0;">Ranked on Form: the average of your last 10 swing scores. One lucky swing does not top the table.</p>
+        </div>
+      </div>
+      <div class="board" id="board" style="margin-top: 14px;"></div>
+    </div>
+    <div class="two">
+      <div class="panel" id="addGuestPanel">
+        <h2>Add a mate</h2>
+        <p class="note" style="margin: 4px 0 12px;">Friends without access can send you their clip. Add them here, pick them as Golfer, and analyze it for them.</p>
+        <form class="row" id="guestForm">
+          <div class="field" style="flex: 1 1 160px;">
+            <label class="label" for="guestName">Name</label>
+            <input id="guestName" maxlength="40" placeholder="e.g. Jay" required>
+          </div>
+          <div class="field">
+            <label class="label" for="guestHand">Plays</label>
+            <select id="guestHand"><option value="R">Right</option><option value="L">Left</option></select>
+          </div>
+          <button class="btn primary" type="submit" style="align-self: end;">Add to crew</button>
+        </form>
+      </div>
+      <div class="panel">
+        <h2>Your card</h2>
+        <form class="row" id="meForm" style="margin-top: 12px;">
+          <div class="field" style="flex: 1 1 160px;">
+            <label class="label" for="meName">Name on the board</label>
+            <input id="meName" maxlength="40" required>
+          </div>
+          <button class="btn" type="submit" style="align-self: end;">Save</button>
+        </form>
+        <p class="note" id="crewNote" style="margin-top: 10px;"></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- COACH -->
+  <section class="view" id="v-coach" hidden>
+    <div class="two">
+      <div class="panel">
+        <h2>Practice plan</h2>
+        <p class="note" style="margin: 4px 0 12px;">Built from your last 10 swings: the three things costing you the most points, with the drill for each.</p>
+        <div class="plan" id="plan"></div>
+      </div>
+      <div class="panel">
+        <h2>Lesson notes</h2>
+        <p class="note" style="margin: 4px 0 10px;">What your coach told you, in their words. Check a cue off once it feels automatic.</p>
+        <form class="row" id="cueForm">
+          <div class="field" style="flex: 1 1 200px;">
+            <label class="label" for="cueText">New cue</label>
+            <input id="cueText" maxlength="140" placeholder="e.g. Turn your back to the target">
+          </div>
+          <button class="btn primary" type="submit" style="align-self: end;">Add</button>
+        </form>
+        <div class="cues" id="cues" style="margin-top: 10px;"></div>
+        <div class="field" style="margin-top: 16px;">
+          <label class="label" for="notes">Session notes</label>
+          <textarea id="notes" placeholder="Lesson 1: grip, posture, ball position…"></textarea>
+        </div>
+        <div class="row" style="margin-top: 10px; justify-content: space-between;">
+          <span class="note" id="notesState"></span>
+          <button class="btn" id="saveNotes">Save notes</button>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+"use strict";
+/* ============================================================
+   Swing Lab — in-browser golf swing analysis
+   Pose: MediaPipe Pose Landmarker with a TF.js MoveNet fallback.
+   ============================================================ */
+
+const CONFIG = {
+  mp: [
+    ["https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs",
+     "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm/vision_wasm_internal.js"],
+    ["./vendor/vision_bundle.mjs", "./wasm/vision_wasm_internal.js"],
+  ],
+  mpWasm: "./wasm/vision_wasm_internal.wasm",
+  mpModel: "./models/pose_landmarker_full.task",
+  tf: [
+    "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js",
+    "https://cdnjs.cloudflare.com/ajax/libs/tensorflow/4.22.0/tf.min.js",
+    "./vendor/tf.min.js",
+  ],
+  movenet: "./models/movenet-thunder.json",
+};
+const TORSO_CM = 50;          // shoulder-to-hip distance used to turn pixels into rough centimetres
+const KEYS = ["nose", "lsho", "rsho", "lelb", "relb", "lwri", "rwri", "lhip", "rhip", "lkne", "rkne", "lank", "rank"];
+const MP_IDX = { nose: 0, lsho: 11, rsho: 12, lelb: 13, relb: 14, lwri: 15, rwri: 16, lhip: 23, rhip: 24, lkne: 25, rkne: 26, lank: 27, rank: 28 };
+const MN_IDX = { nose: 0, lsho: 5, rsho: 6, lelb: 7, relb: 8, lwri: 9, rwri: 10, lhip: 11, rhip: 12, lkne: 13, rkne: 14, lank: 15, rank: 16 };
+const BONES = [["lsho", "rsho"], ["lsho", "lelb"], ["lelb", "lwri"], ["rsho", "relb"], ["relb", "rwri"], ["lsho", "lhip"], ["rsho", "rhip"], ["lhip", "rhip"], ["lhip", "lkne"], ["lkne", "lank"], ["rhip", "rkne"], ["rkne", "rank"]];
+const PHASES = [["address", "Address"], ["top", "Top"], ["impact", "Impact"], ["finish", "Finish"]];
+
+/* ---------- small helpers ---------- */
+const $ = (s, el = document) => el.querySelector(s);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, v: Math.min(a.v, b.v) });
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const median = (arr) => { const s = arr.filter(Number.isFinite).sort((a, b) => a - b); return s.length ? s[s.length >> 1] : NaN; };
+const mean = (arr) => { const s = arr.filter(Number.isFinite); return s.length ? s.reduce((a, b) => a + b, 0) / s.length : NaN; };
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+function angleAt(a, b, c) {
+  const x1 = a.x - b.x, y1 = a.y - b.y, x2 = c.x - b.x, y2 = c.y - b.y;
+  const d = Math.hypot(x1, y1) * Math.hypot(x2, y2);
+  return d ? Math.acos(clamp((x1 * x2 + y1 * y2) / d, -1, 1)) * 180 / Math.PI : NaN;
+}
+function lsGet(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } }
+function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } }
+function toast(msg) {
+  const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2600);
+}
+function loadScript(src) {
+  return new Promise((res, rej) => {
+    const s = document.createElement("script"); s.src = src; s.crossOrigin = "anonymous";
+    s.onload = res; s.onerror = () => rej(new Error("Could not load " + src)); document.head.appendChild(s);
+  });
+}
+const fmtDate = (ms) => new Date(ms).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+
+/* ============================================================
+   Pose engines
+   ============================================================ */
+async function initMediaPipe() {
+  let vision = null, loader = null, lastErr;
+  for (const [bundle, ldr] of CONFIG.mp) {
+    try { vision = await import(bundle); loader = ldr; break; } catch (e) { lastErr = e; }
+  }
+  if (!vision) throw lastErr || new Error("MediaPipe unavailable");
+  const res = await fetch(CONFIG.mpModel);
+  if (!res.ok) throw new Error("Pose model missing");
+  const modelAssetBuffer = new Uint8Array(await res.arrayBuffer());
+  const fileset = { wasmLoaderPath: loader, wasmBinaryPath: CONFIG.mpWasm };
+  const make = (delegate) => vision.PoseLandmarker.createFromOptions(fileset, {
+    baseOptions: { modelAssetBuffer, delegate }, runningMode: "IMAGE", numPoses: 1,
+    minPoseDetectionConfidence: 0.35, minPosePresenceConfidence: 0.35, minTrackingConfidence: 0.35,
+  });
+  let lm;
+  const forceCpu = new URLSearchParams(location.search).get("delegate") === "cpu";
+  try { lm = await make(forceCpu ? "CPU" : "GPU"); } catch { lm = await make("CPU"); }
+  return {
+    name: "MediaPipe",
+    reset() {},
+    async detect(canvas) {
+      const r = lm.detect(canvas);
+      const L = r.landmarks?.[0]; if (!L) return null;
+      const W = canvas.width, H = canvas.height, kp = {};
+      for (const k of KEYS) { const p = L[MP_IDX[k]]; kp[k] = { x: p.x * W, y: p.y * H, v: p.visibility ?? 1 }; }
+      return kp;
+    },
+  };
+}
+
+async function initMoveNet() {
+  if (!window.tf) {
+    for (const src of CONFIG.tf) { try { await loadScript(src); if (window.tf) break; } catch {} }
+  }
+  const tf = window.tf; if (!tf) throw new Error("TensorFlow.js unavailable");
+  try { await tf.setBackend("webgl"); } catch { await tf.setBackend("cpu"); }
+  await tf.ready();
+  const model = await tf.loadGraphModel(CONFIG.movenet);
+  const S = 256;
+  let crop = null;
+  const fullBox = (W, H) => { const s = Math.max(W, H); return { x: (W - s) / 2, y: (H - s) / 2, s }; };
+  function run(canvas, box) {
+    const W = canvas.width, H = canvas.height;
+    const out = tf.tidy(() => {
+      const img = tf.browser.fromPixels(canvas).toFloat().expandDims(0);
+      const b = [[box.y / H, box.x / W, (box.y + box.s) / H, (box.x + box.s) / W]];
+      const input = tf.image.cropAndResize(img, b, [0], [S, S]).toInt();
+      return model.execute(input);
+    });
+    const a = out.dataSync(); out.dispose();
+    const kp = {};
+    for (const k of KEYS) { const i = MN_IDX[k] * 3; kp[k] = { x: box.x + a[i + 1] * box.s, y: box.y + a[i] * box.s, v: a[i + 2] }; }
+    return kp;
+  }
+  function cropFrom(kp, W, H) {
+    const pts = KEYS.map((k) => kp[k]).filter((p) => p.v > 0.25);
+    if (pts.length < 6) return null;
+    const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
+    const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+    const s = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) * 1.5 + 0.05 * Math.min(W, H);
+    return { x: cx - s / 2, y: cy - s / 2, s: Math.max(s, 0.3 * Math.min(W, H)) };
+  }
+  const avgScore = (kp) => mean(KEYS.map((k) => kp[k].v));
+  return {
+    name: "MoveNet",
+    reset() { crop = null; },
+    async detect(canvas) {
+      const W = canvas.width, H = canvas.height;
+      let kp;
+      if (crop) { kp = run(canvas, crop); if (avgScore(kp) < 0.3) crop = null; }
+      if (!crop) { kp = run(canvas, fullBox(W, H)); const c = cropFrom(kp, W, H); if (c) { crop = c; kp = run(canvas, crop); } }
+      const c = cropFrom(kp, W, H); if (c) crop = c;
+      return avgScore(kp) < 0.2 ? null : kp;
+    },
+  };
+}
+
+let engine = null;
+const engineReady = (async () => {
+  const forced = new URLSearchParams(location.search).get("engine");
+  const order = forced === "movenet" ? [initMoveNet] : [initMediaPipe, initMoveNet];
+  let lastErr;
+  for (const init of order) {
+    try { engine = await init(); break; } catch (e) { lastErr = e; console.warn("Pose engine failed", e); }
+  }
+  const el = $("#engine");
+  if (engine) {
+    el.dataset.state = "ready";
+    $("#engineText").textContent = engine.name === "MediaPipe" ? "Pose model ready" : "Pose model ready (lite)";
+  } else {
+    el.dataset.state = "error";
+    $("#engineText").textContent = "Pose model failed to load";
+    showError("The pose model could not start in this browser. Try Chrome or Safari, or open the lab on a laptop. (" + (lastErr?.message || "unknown error") + ")");
+  }
+  return engine;
+})();
+
+/* ============================================================
+   Video sampling
+   ============================================================ */
+const video = $("#video");
+const work = document.createElement("canvas");
+const wctx = work.getContext("2d", { willReadFrequently: true });
+
+function waitEvent(el, name, ms = 4000) {
+  return new Promise((res) => {
+    let done = false;
+    const fin = () => { if (!done) { done = true; el.removeEventListener(name, fin); res(); } };
+    el.addEventListener(name, fin); setTimeout(fin, ms);
+  });
+}
+async function loadVideo(file) {
+  video.removeAttribute("src"); video.load();
+  video.src = URL.createObjectURL(file);
+  await waitEvent(video, "loadeddata", 15000);
+  if (!video.videoWidth) throw new Error("This video could not be decoded. On iPhone, set Camera › Formats to “Most Compatible”, or export the clip again.");
+  const scale = Math.min(1, 640 / Math.max(video.videoWidth, video.videoHeight));
+  work.width = Math.round(video.videoWidth * scale); work.height = Math.round(video.videoHeight * scale);
+}
+async function seekTo(t) {
+  if (Math.abs(video.currentTime - t) < 1e-4) return;
+  const p = waitEvent(video, "seeked");
+  video.currentTime = t;
+  await p;
+}
+async function sampleAt(t) {
+  await seekTo(t);
+  wctx.drawImage(video, 0, 0, work.width, work.height);
+  const kp = await engine.detect(work);
+  return { t, kp };
+}
+
+/* ============================================================
+   Swing detection + phase finding
+   ============================================================ */
+function handsHigh(kp) {
+  if (!kp) return false;
+  const vis = Math.min(kp.lsho.v, kp.rsho.v, Math.max(kp.lwri.v, kp.rwri.v));
+  if (vis < 0.25) return false;
+  const hand = mid(kp.lwri, kp.rwri), sho = mid(kp.lsho, kp.rsho);
+  return hand.y < sho.y;
+}
+
+function findWindows(frames, dur, slow) {
+  const runs = [];
+  let cur = null;
+  for (const f of frames) {
+    if (handsHigh(f.kp)) { if (cur && f.t - cur[1] <= 1.3 * slow) cur[1] = f.t; else { cur = [f.t, f.t]; runs.push(cur); } }
+  }
+  // Window each swing generously, but never let neighbouring windows overlap.
+  const merged = runs.map(([a, b]) => [Math.max(0, a - 2.4 * slow), Math.min(dur, b + 1.8 * slow)]);
+  for (let i = 1; i < merged.length; i++) {
+    if (merged[i][0] < merged[i - 1][1]) { const cut = (runs[i - 1][1] + runs[i][0]) / 2; merged[i - 1][1] = Math.max(cut, runs[i - 1][1]); merged[i][0] = Math.min(cut, runs[i][0]); }
+  }
+  if (!merged.length && dur <= 12 * slow) merged.push([0, dur]);
+  return merged;
+}
+
+/* Fill low-confidence gaps and median-filter each joint. */
+function cleanSeries(frames) {
+  const n = frames.length;
+  const out = frames.map((f) => ({ t: f.t, kp: {} }));
+  for (const k of KEYS) {
+    const xs = new Array(n), ys = new Array(n), vs = new Array(n);
+    for (let i = 0; i < n; i++) {
+      const p = frames[i].kp?.[k];
+      if (p && p.v >= 0.3) { xs[i] = p.x; ys[i] = p.y; vs[i] = p.v; } else { xs[i] = NaN; ys[i] = NaN; vs[i] = p ? p.v : 0; }
+    }
+    for (const arr of [xs, ys]) {
+      let last = -1;
+      for (let i = 0; i < n; i++) {
+        if (Number.isFinite(arr[i])) {
+          if (last === -1) for (let j = 0; j < i; j++) arr[j] = arr[i];
+          else for (let j = last + 1; j < i; j++) arr[j] = arr[last] + (arr[i] - arr[last]) * (j - last) / (i - last);
+          last = i;
+        }
+      }
+      if (last >= 0) for (let j = last + 1; j < n; j++) arr[j] = arr[last];
+    }
+    for (let i = 0; i < n; i++) {
+      const a = Math.max(0, i - 1), b = Math.min(n - 1, i + 1);
+      const mx = median(xs.slice(a, b + 1)), my = median(ys.slice(a, b + 1));
+      out[i].kp[k] = { x: Number.isFinite(mx) ? mx : NaN, y: Number.isFinite(my) ? my : NaN, v: vs[i] };
+    }
+  }
+  return out;
+}
+
+function avgPose(series, i, r = 1) {
+  const a = Math.max(0, i - r), b = Math.min(series.length - 1, i + r), kp = {};
+  for (const k of KEYS) {
+    const pts = series.slice(a, b + 1).map((f) => f.kp[k]);
+    kp[k] = { x: mean(pts.map((p) => p.x)), y: mean(pts.map((p) => p.y)), v: mean(pts.map((p) => p.v)) };
+  }
+  return kp;
+}
+
+function findPhases(series, slow) {
+  const n = series.length;
+  if (n < 12) return null;
+  const rt = series.map((f) => f.t / slow);                     // real-time seconds
+  const torso = median(series.map((f) => dist(mid(f.kp.lsho, f.kp.rsho), mid(f.kp.lhip, f.kp.rhip))));
+  if (!(torso > 8)) return null;
+  const hand = series.map((f) => mid(f.kp.lwri, f.kp.rwri));
+  const H = series.map((f, i) => (mid(f.kp.lhip, f.kp.rhip).y - hand[i].y) / torso);
+  const dH = H.map((_, i) => { const a = Math.max(0, i - 1), b = Math.min(n - 1, i + 1); return (H[b] - H[a]) / ((rt[b] - rt[a]) || 1); });
+  const speed = hand.map((p, i) => { const a = Math.max(0, i - 2), b = Math.min(n - 1, i + 2); return dist(hand[a], hand[b]) / torso / ((rt[b] - rt[a]) || 1); });
+
+  // Downswing = steepest fall of the hands that is followed by a follow-through (rules out lowering the club after a finish).
+  const order = [...dH.keys()].sort((a, b) => dH[a] - dH[b]);
+  let p = -1, top = -1;
+  for (const c of order.slice(0, 40)) {
+    if (dH[c] > -2.5) break;
+    let i = c; while (i > 0 && H[i - 1] >= H[i] - 0.04) i--;
+    let tp = i; for (let j = i; j <= c; j++) if (H[j] > H[tp]) tp = j;
+    if (H[tp] < 0.45) continue;
+    let lowAfter = c; for (let j = c; j < n && rt[j] - rt[c] <= 0.6; j++) if (H[j] < H[lowAfter]) lowAfter = j;
+    let follow = false; for (let j = lowAfter; j < n && rt[j] - rt[lowAfter] <= 2.5; j++) if (H[j] - H[lowAfter] > 0.5 * (H[tp] - H[lowAfter])) { follow = true; break; }
+    if (follow) { p = c; top = tp; break; }
+  }
+  if (p < 0) return null;
+  // Takeaway: hands back near their lowest point before the top, then walk back to where they were still.
+  const STILL = 0.55;
+  let lowI = top;
+  for (let j = top; j >= 0 && rt[top] - rt[j] <= 3; j--) if (H[j] < H[lowI]) lowI = j;
+  const rise = H[top] - H[lowI];
+  let take = top; while (take > lowI && H[take] > H[lowI] + 0.12 * rise) take--;
+  const takeCap = rt[take] - 0.5;
+  while (take > 0 && rt[take] > takeCap && !(speed[take] < STILL && speed[take - 1] < STILL)) take--;
+  const takeawayFound = take > 0 && lowI > 0;
+  const address = Math.max(0, take - 1);
+  // Impact: hands come back down to address height, then bottom out.
+  const Haddr = H[address];
+  let impact = -1;
+  for (let j = top + 1; j < n && rt[j] - rt[top] <= 1.2; j++) if (H[j] <= Haddr + 0.15) { impact = j; break; }
+  if (impact < 0) { impact = p; for (let j = p; j < n && rt[j] - rt[p] <= 0.35; j++) if (H[j] < H[impact]) impact = j; }
+  else { let k = 0; while (k < 2 && impact + 1 < n && H[impact + 1] < H[impact]) { impact++; k++; } }
+  // Finish = hands up and settled after impact.
+  let finish = -1;
+  for (let j = impact; j < n; j++) if (rt[j] - rt[impact] >= 0.25 && speed[j] < 0.9 && H[j] > 0.3) { finish = j; break; }
+  if (finish < 0) { finish = impact; for (let j = impact; j < n; j++) if (H[j] > H[finish]) finish = j; }
+  let holdEnd = finish; while (holdEnd < n - 1 && speed[holdEnd + 1] < 1.2) holdEnd++;
+  const holdCut = holdEnd === n - 1;
+  return {
+    idx: { address, takeaway: take, top, impact, finish }, torso, rt, H,
+    tempo: { back: rt[top] - rt[take], down: rt[impact] - rt[top], ok: takeawayFound && impact > top + 1 },
+    hold: { secs: rt[holdEnd] - rt[finish], cut: holdCut },
+    downFrames: impact - top,
+  };
+}
+
+/* ============================================================
+   Metrics
+   ============================================================ */
+const METRICS = {
+  tempo: {
+    label: "Tempo", hint: "backswing : downswing", ideal: [2.6, 3.4], tol: 1.4, domain: [1, 5], weight: 1.2,
+    fmt: (v) => v.toFixed(1) + " : 1",
+    lo: "You are rushing from the top. The backswing needs to finish before the downswing starts.",
+    hi: "The downswing is slow next to your backswing. Commit and speed up through the ball.",
+    good: "Smooth. Tour players sit near 3 : 1 whatever their swing speed.",
+    drill: "Count “one-two-three” going back and “four” at impact. Ten swings at half speed, then ten at full speed, same count.",
+  },
+  headSway: {
+    label: "Head sway", hint: "side to side, face-on", ideal: [0, 6], tol: 12, domain: [0, 25], weight: 1, unit: "cm",
+    fmt: (v) => "≈ " + v.toFixed(0) + " cm",
+    hi: "Your head drifts sideways. That moves the bottom of your swing and causes fat and thin strikes.",
+    good: "Head stays centred. That keeps your strike point consistent.",
+    drill: "Feet-together drill: hit half shots with your feet touching. If you sway, you lose balance straight away.",
+  },
+  headHeight: {
+    label: "Head height", hint: "up and down, address to impact", ideal: [0, 4], tol: 10, domain: [0, 20], weight: 1, unit: "cm",
+    fmt: (v) => "≈ " + v.toFixed(0) + " cm",
+    hi: "Your head rises or dips through the swing, which changes how far you are from the ball.",
+    good: "You stay at the same height. That keeps the club returning to the ball.",
+    drill: "Get a mate to rest a club grip lightly on top of your head and make slow swings without pushing into it or pulling away.",
+  },
+  hipSway: {
+    label: "Hip sway", hint: "slide away from target at the top", ideal: [-3, 6], tol: 12, domain: [-10, 25], weight: 1, unit: "cm",
+    fmt: (v) => "≈ " + (v < -0.5 ? "−" : "") + Math.abs(v).toFixed(0) + " cm",
+    hi: "Your hips slide away from the target instead of turning. You then have to slide back to hit it.",
+    lo: "Your hips are moving toward the target on the backswing (a reverse pivot).",
+    good: "Your hips turn in place rather than sliding.",
+    drill: "Put your bag or a chair just outside your trail hip. Turn back without bumping it. 15 slow swings.",
+  },
+  weightShift: {
+    label: "Weight shift", hint: "hips toward target at impact", ideal: [3, 18], tol: 10, domain: [-15, 25], weight: 1.2, unit: "cm",
+    fmt: (v) => "≈ " + (v < -0.5 ? "−" : "") + Math.abs(v).toFixed(0) + " cm",
+    lo: "You are hanging back at impact. Your weight needs to move onto your lead foot before the club reaches the ball.",
+    hi: "Your hips slide well past the ball. Turn through rather than bump.",
+    good: "Weight moves onto your lead side at impact. That is where solid contact comes from.",
+    drill: "Step-through drill: hit soft 7 irons and, as you finish, walk your trail foot forward toward the target.",
+  },
+  leadArm: {
+    label: "Lead arm at top", hint: "elbow angle", ideal: [155, 180], tol: 40, domain: [90, 180], weight: 0.8, unit: "°",
+    fmt: (v) => v.toFixed(0) + "°",
+    lo: "Your lead arm folds at the top. You lose width and the swing gets handsy.",
+    good: "Wide, straight lead arm at the top.",
+    drill: "Three-quarter swings: stop when your hands reach shoulder height with the lead arm straight. Width over length.",
+  },
+  shoulderTurn: {
+    label: "Shoulder turn", hint: "at the top (estimate)", ideal: [80, 105], tol: 40, domain: [0, 120], weight: 0.8, unit: "°",
+    fmt: (v) => v.toFixed(0) + "°",
+    lo: "Your shoulders are not turning enough. The arms are doing the work.",
+    hi: "Big shoulder turn. Fine if you stay balanced; trim it if you lose control.",
+    good: "Full shoulder turn with your back to the target.",
+    drill: "Cross your arms over your chest and turn until your lead shoulder sits under your chin. Feel it, then swing.",
+  },
+  hipTurn: {
+    label: "Hip turn", hint: "at the top (estimate)", ideal: [35, 55], tol: 25, domain: [0, 90], weight: 0.5, unit: "°",
+    fmt: (v) => v.toFixed(0) + "°",
+    lo: "Hips are locked. A little more turn will let your shoulders get round.",
+    hi: "Hips over-rotate on the backswing, which costs you coil.",
+    good: "Hips turn about half as much as the shoulders. Good coil.",
+    drill: "Brace your trail knee: keep it flexed and still as you turn back. The hips turn, the knee does not straighten.",
+  },
+  spineTilt: {
+    label: "Posture at address", hint: "forward bend from the hips", ideal: [30, 45], tol: 15, domain: [0, 70], weight: 1, unit: "°",
+    fmt: (v) => v.toFixed(0) + "°",
+    lo: "You are standing too upright. Hinge from your hips so your arms can hang.",
+    hi: "You are bent over a lot. Stand a touch taller and let your backside go back.",
+    good: "Athletic posture with a good hip hinge.",
+    drill: "Hold a club across your hips, push them back until your chest is over your toes, then let your arms hang. That is your setup.",
+  },
+  spineHold: {
+    label: "Posture through impact", hint: "change from address", ideal: [-6, 6], tol: 10, domain: [-25, 15], weight: 1.2, unit: "°",
+    fmt: (v) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(0) + "°",
+    lo: "You stand up through impact (early extension). It is the most common reason beginners top and slice the ball.",
+    hi: "You dive down toward the ball through impact.",
+    good: "You keep your posture through the strike.",
+    drill: "Chair drill: set up with your backside just touching a chair. Keep it touching all the way through impact.",
+  },
+  hipThrust: {
+    label: "Hips toward ball", hint: "at impact", ideal: [-5, 4], tol: 10, domain: [-15, 25], weight: 1, unit: "cm",
+    fmt: (v) => "≈ " + (v < -0.5 ? "−" : "") + Math.abs(v).toFixed(0) + " cm",
+    hi: "Your hips push toward the ball, which jams your arms and leads to shanks and blocks.",
+    good: "Hips stay back. That leaves room for the arms to swing.",
+    drill: "Same chair drill. Your trail glute should still be touching the chair as the club reaches the ball.",
+  },
+  kneeFlex: {
+    label: "Knee flex", hint: "at address", ideal: [15, 35], tol: 20, domain: [0, 60], weight: 0.6, unit: "°",
+    fmt: (v) => v.toFixed(0) + "°",
+    lo: "Your legs are nearly straight at address. Soften the knees.",
+    hi: "You are squatting. Straighten up a little and hinge from the hips instead.",
+    good: "Soft, athletic knees.",
+    drill: "Set up as if you are about to catch a ball thrown at your chest: soft knees, weight on the balls of your feet.",
+  },
+  finishPos: {
+    label: "Finish position", hint: "hips over lead foot", ideal: [-8, 15], tol: 20, domain: [-40, 25], weight: 0.8, unit: "cm",
+    fmt: (v) => "≈ " + (v < -0.5 ? "−" : "") + Math.abs(v).toFixed(0) + " cm",
+    lo: "You finish with your weight back on your trail side.",
+    hi: "You are falling toward the target at the finish.",
+    good: "Finish stacked on your lead foot.",
+    drill: "Finish with your belt buckle facing the target and your trail toe the only part of that foot on the ground.",
+  },
+  finishHold: {
+    label: "Finish hold", hint: "balanced pose after the swing", ideal: [1.2, 99], tol: 1.2, domain: [0, 3], weight: 0.7, unit: "s",
+    fmt: (v) => v.toFixed(1) + " s",
+    lo: "You come out of the finish straight away. That usually means you were off balance.",
+    good: "Balanced finish you can hold. That shows control.",
+    drill: "Hold every finish for a three-count, like you are posing for a photo. If you cannot, swing at 80%.",
+  },
+};
+
+function bandScore(v, [lo, hi], tol) {
+  if (!Number.isFinite(v)) return NaN;
+  if (v >= lo && v <= hi) return 100;
+  const d = v < lo ? lo - v : v - hi;
+  return Math.max(0, Math.round(100 * (1 - d / tol)));
+}
+const statusOf = (s) => !Number.isFinite(s) ? "na" : s >= 80 ? "good" : s >= 50 ? "ok" : "work";
+
+function computeMetrics(series, ph, opts) {
+  const { idx, torso } = ph;
+  const P = {
+    address: avgPose(series, idx.address, 2), top: avgPose(series, idx.top, 1),
+    impact: avgPose(series, idx.impact, 0), finish: avgPose(series, idx.finish, 1),
+  };
+  const A = P.address, T = P.top, I = P.impact, F = P.finish;
+  const cm = (px) => px / torso * TORSO_CM;
+  const lead = opts.hand === "L" ? "r" : "l", trail = lead === "l" ? "r" : "l";
+  const shoW = dist(A.lsho, A.rsho) / torso;
+  const view = opts.view !== "auto" ? opts.view : (shoW > 0.55 ? "face" : "dtl");
+  const hipA = mid(A.lhip, A.rhip), hipT = mid(T.lhip, T.rhip), hipI = mid(I.lhip, I.rhip), hipF = mid(F.lhip, F.rhip);
+  const out = {};
+  const put = (id, value, conf = 1) => {
+    if (!Number.isFinite(value)) return;
+    const d = METRICS[id];
+    out[id] = { value: +value.toFixed(2), score: bandScore(value, d.ideal, d.tol), conf: +conf.toFixed(2) };
+  };
+  const vis = (...pts) => Math.min(...pts.map((p) => p.v || 0));
+
+  if (ph.tempo.ok && ph.downFrames >= 2) put("tempo", ph.tempo.back / ph.tempo.down, ph.downFrames >= 4 ? 1 : 0.6);
+  put("leadArm", angleAt(T[lead + "sho"], T[lead + "elb"], T[lead + "wri"]), vis(T[lead + "sho"], T[lead + "elb"], T[lead + "wri"]));
+
+  if (view === "face") {
+    const dirT = Math.sign(A[lead + "sho"].x - A[trail + "sho"].x) || 1;   // +1 = target is image-right
+    put("headSway", cm(Math.max(Math.abs(T.nose.x - A.nose.x), Math.abs(I.nose.x - A.nose.x))), vis(A.nose, T.nose, I.nose));
+    put("hipSway", cm(-(hipT.x - hipA.x) * dirT), vis(A.lhip, A.rhip, T.lhip, T.rhip));
+    put("weightShift", cm((hipI.x - hipA.x) * dirT), vis(I.lhip, I.rhip));
+    put("finishPos", cm((hipF.x - F[lead + "ank"].x) * dirT), vis(F.lhip, F.rhip, F[lead + "ank"]));
+  } else {
+    const dirB = Math.sign(mid(A.lwri, A.rwri).x - hipA.x) || 1;           // +1 = ball is image-right
+    const tilt = (k) => { const s = mid(k.lsho, k.rsho), h = mid(k.lhip, k.rhip); return Math.atan2(Math.abs(s.x - h.x), Math.abs(h.y - s.y)) * 180 / Math.PI; };
+    put("spineTilt", tilt(A), vis(A.lsho, A.rsho, A.lhip, A.rhip));
+    put("spineHold", tilt(I) - tilt(A), vis(I.lsho, I.rsho, I.lhip, I.rhip));
+    put("hipThrust", cm((hipI.x - hipA.x) * dirB), vis(I.lhip, I.rhip));
+    const knee = mean([angleAt(A.lhip, A.lkne, A.lank), angleAt(A.rhip, A.rkne, A.rank)]);
+    put("kneeFlex", 180 - knee, vis(A.lkne, A.rkne, A.lank, A.rank));
+    put("headHeight", cm(Math.max(Math.abs(T.nose.y - A.nose.y), Math.abs(I.nose.y - A.nose.y))), vis(A.nose, I.nose));
+  }
+  // Face-on only: turn estimated from how much narrower the shoulders / hips look at the top.
+  {
+    const w = (k, a, b) => dist(k[a], k[b]);
+    const turn = (a, b) => Math.acos(clamp(w(T, a, b) / w(A, a, b), 0, 1)) * 180 / Math.PI;
+    if (view === "face") { put("shoulderTurn", turn("lsho", "rsho"), 0.6); put("hipTurn", turn("lhip", "rhip"), 0.5); }
+  }
+  if (!ph.hold.cut || ph.hold.secs >= METRICS.finishHold.ideal[0]) put("finishHold", ph.hold.secs, 1);
+
+  let wsum = 0, ssum = 0;
+  for (const [id, m] of Object.entries(out)) { const w = METRICS[id].weight * (m.conf < 0.5 ? 0.5 : 1); wsum += w; ssum += w * m.score; }
+  return { view, metrics: out, score: wsum ? Math.round(ssum / wsum) : 0, poses: P };
+}
+
+function pickFocus(metrics) {
+  let best = null;
+  for (const [id, m] of Object.entries(metrics)) {
+    const cost = (100 - m.score) * METRICS[id].weight * (m.conf < 0.5 ? 0.5 : 1);
+    if (cost > 0 && (!best || cost > best.cost)) best = { id, cost, m };
+  }
+  return best;
+}
+function adviceFor(id, m) {
+  const d = METRICS[id];
+  if (m.score >= 80) return d.good;
+  return m.value < d.ideal[0] ? (d.lo || d.hi) : (d.hi || d.lo);
+}
+
+/* ============================================================
+   Full analysis run
+   ============================================================ */
+const state = { swings: [], cur: 0, dur: 0, W: 0, H: 0, slow: 1, file: null, opts: null };
+
+function setWork(pct, note) {
+  $("#workBar").style.width = Math.round(pct) + "%";
+  $("#workPct").textContent = Math.round(pct) + "%";
+  if (note) $("#workNote").textContent = note;
+}
+
+async function analyzeFile(file) {
+  hideError();
+  await engineReady; if (!engine) return;
+  const opts = { view: $("#view").value, hand: $("#hand").value, slow: +$("#slowmo").value, club: $("#club").value };
+  state.opts = opts; state.slow = opts.slow; state.file = file;
+  $("#intake").hidden = true; $("#results").hidden = true; $("#working").hidden = false;
+  $("#workTitle").textContent = "Reading your swing…"; setWork(0, "Loading the video.");
+  try {
+    await loadVideo(file);
+    const dur = video.duration; state.dur = dur; state.W = work.width; state.H = work.height;
+    // Pass 1: coarse scan to find swings.
+    const step1 = Math.max(0.125 * Math.min(opts.slow, 2), dur / 420);
+    const coarse = [];
+    engine.reset();
+    for (let t = 0; t < dur; t += step1) {
+      coarse.push(await sampleAt(t));
+      setWork(35 * t / dur, "Finding each swing in the clip.");
+    }
+    const wins = findWindows(coarse, dur, opts.slow);
+    if (!wins.length) throw new Error("No swing found. Make sure your whole body is in frame and your hands go above your shoulders at the top.");
+    // Pass 2: dense sampling around each swing.
+    const swings = [];
+    const total = wins.reduce((s, w) => s + (w[1] - w[0]), 0);
+    let doneT = 0;
+    for (let w = 0; w < wins.length; w++) {
+      const [a, b] = wins[w];
+      const step = Math.max(1 / 30, (b - a) / 170);
+      const raw = [];
+      engine.reset();
+      for (let t = a; t <= b; t += step) {
+        raw.push(await sampleAt(t));
+        setWork(35 + 60 * (doneT + (t - a)) / total, `Measuring swing ${w + 1} of ${wins.length}.`);
+      }
+      doneT += b - a;
+      const series = cleanSeries(raw);
+      const ph = findPhases(series, opts.slow);
+      if (!ph) continue;
+      const res = computeMetrics(series, ph, opts);
+      swings.push({ series, ph, ...res, t0: a, t1: b, times: Object.fromEntries(Object.entries(ph.idx).map(([k, i]) => [k, series[i].t])) });
+    }
+    if (!swings.length) throw new Error("I could see you, but not a full swing. Check the whole swing is in the clip, from setup to finish.");
+    setWork(97, "Grabbing key frames.");
+    for (const s of swings) s.thumbs = await grabThumbs(s);
+    state.swings = swings;
+    state.cur = swings.reduce((bi, s, i) => (s.score > swings[bi].score ? i : bi), 0);
+    $("#working").hidden = true; $("#results").hidden = false;
+    renderResults();
+    await saveSession(swings, opts);
+    window.__swingLab.last = exportAnalysis();
+  } catch (e) {
+    console.error(e);
+    $("#working").hidden = true; $("#intake").hidden = false;
+    showError(e.message || String(e));
+  }
+}
+
+async function grabThumbs(s) {
+  const out = {};
+  const c = document.createElement("canvas");
+  const tw = 180, th = Math.round(tw * state.H / state.W);
+  c.width = tw; c.height = th;
+  const g = c.getContext("2d");
+  for (const [k] of PHASES) {
+    await seekTo(s.times[k]);
+    g.drawImage(video, 0, 0, tw, th);
+    drawSkeleton(g, s.poses[k], tw / state.W, 1.5);
+    out[k] = c.toDataURL("image/jpeg", 0.68);
+  }
+  return out;
+}
+
+function showError(msg) { const e = $("#errorBox"); e.textContent = msg; e.hidden = false; }
+function hideError() { $("#errorBox").hidden = true; }
+
+/* ============================================================
+   Drawing
+   ============================================================ */
+function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+function drawSkeleton(g, kp, sc, lw = 3) {
+  if (!kp) return;
+  g.lineCap = "round"; g.lineWidth = lw;
+  g.strokeStyle = "rgba(255,255,255,.92)";
+  for (const [a, b] of BONES) {
+    const p = kp[a], q = kp[b];
+    if (!Number.isFinite(p.x) || !Number.isFinite(q.x)) continue;
+    g.beginPath(); g.moveTo(p.x * sc, p.y * sc); g.lineTo(q.x * sc, q.y * sc); g.stroke();
+  }
+  g.fillStyle = css("--flag") || "#e0482c";
+  for (const k of KEYS) { const p = kp[k]; if (!Number.isFinite(p.x)) continue; g.beginPath(); g.arc(p.x * sc, p.y * sc, lw * 1.2, 0, 7); g.fill(); }
+}
+
+const overlay = $("#overlay"), octx = overlay.getContext("2d");
+const ui = { trail: true, guides: true, slow: true };
+
+function nearestFrame(series, t) {
+  let lo = 0, hi = series.length - 1;
+  if (t < series[0].t - 0.3 || t > series[hi].t + 0.3) return -1;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (series[m].t < t) lo = m; else hi = m; }
+  return Math.abs(series[lo].t - t) < Math.abs(series[hi].t - t) ? lo : hi;
+}
+
+function drawOverlay() {
+  const s = state.swings[state.cur]; if (!s) return;
+  const r = overlay.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  if (overlay.width !== Math.round(r.width * dpr)) { overlay.width = Math.round(r.width * dpr); overlay.height = Math.round(r.height * dpr); }
+  const sc = overlay.width / state.W;
+  octx.clearRect(0, 0, overlay.width, overlay.height);
+  const i = nearestFrame(s.series, video.currentTime);
+  const { idx } = s.ph, A = s.poses.address;
+  if (ui.guides) {
+    // Head circle and spine line at address: the two lines a coach draws on your video.
+    const head = A.nose, r0 = s.ph.torso * 0.16 * sc;
+    octx.setLineDash([6 * dpr, 6 * dpr]); octx.lineWidth = 2 * dpr; octx.strokeStyle = "rgba(255,214,64,.95)";
+    octx.beginPath(); octx.arc(head.x * sc, head.y * sc, r0, 0, 7); octx.stroke();
+    if (s.view === "dtl") {
+      const sh = mid(A.lsho, A.rsho), hp = mid(A.lhip, A.rhip);
+      const ex = (sh.x - hp.x) * 0.25, ey = (sh.y - hp.y) * 0.25;
+      octx.beginPath(); octx.moveTo((hp.x - ex) * sc, (hp.y - ey) * sc); octx.lineTo((sh.x + ex) * sc, (sh.y + ey) * sc); octx.stroke();
+    } else {
+      const hp = mid(A.lhip, A.rhip);
+      octx.beginPath(); octx.moveTo(hp.x * sc, (hp.y - s.ph.torso * 1.6) * sc); octx.lineTo(hp.x * sc, (hp.y + s.ph.torso * 1.2) * sc); octx.stroke();
+    }
+    octx.setLineDash([]);
+  }
+  if (ui.trail) {
+    const seg = (from, to, color) => {
+      octx.strokeStyle = color; octx.lineWidth = 3 * dpr; octx.beginPath();
+      for (let j = from; j <= to; j++) { const p = mid(s.series[j].kp.lwri, s.series[j].kp.rwri); j === from ? octx.moveTo(p.x * sc, p.y * sc) : octx.lineTo(p.x * sc, p.y * sc); }
+      octx.stroke();
+    };
+    const end = i < 0 ? idx.finish : Math.min(i, idx.finish);
+    if (end > idx.takeaway) seg(idx.takeaway, Math.min(end, idx.top), css("--trail-back"));
+    if (end > idx.top) seg(idx.top, end, css("--trail-down"));
+  }
+  if (i >= 0) drawSkeleton(octx, s.series[i].kp, sc, 3 * dpr);
+}
+
+function loop() { drawOverlay(); if (!video.paused) requestAnimationFrame(loop); }
+video.addEventListener("play", () => { $("#play").textContent = "Pause"; requestAnimationFrame(loop); });
+video.addEventListener("pause", () => { $("#play").textContent = "Play"; drawOverlay(); });
+video.addEventListener("seeked", drawOverlay);
+window.addEventListener("resize", () => { sizeStage(); drawOverlay(); });
+
+/* ============================================================
+   Results rendering
+   ============================================================ */
+function sizeStage() {
+  const st = $("#stage"); if (!state.W) return;
+  const ar = state.W / state.H;
+  st.style.aspectRatio = `${state.W} / ${state.H}`;
+  st.style.width = `min(100%, ${Math.round(ar * 70)}vh)`;
+}
+
+function verdictFor(score) {
+  if (score >= 85) return ["Tour-ready positions", "Keep filming. Consistency is the next level."];
+  if (score >= 70) return ["Solid swing", "A couple of tweaks and this repeats."];
+  if (score >= 55) return ["Good foundations", "Fix the focus below and you will feel the strike change."];
+  return ["Plenty to gain", "Start with the one focus below. Ignore the rest for now."];
+}
+
+function renderResults() {
+  const s = state.swings[state.cur];
+  sizeStage();
+  // swing chips
+  const strip = $("#strip"); strip.innerHTML = "";
+  state.swings.forEach((sw, i) => {
+    const b = document.createElement("button"); b.className = "chip"; b.setAttribute("aria-pressed", String(i === state.cur));
+    b.innerHTML = `Swing ${i + 1} <span class="mark ${statusOf(sw.score)}">${sw.score}</span>`;
+    b.onclick = () => { state.cur = i; renderResults(); };
+    strip.appendChild(b);
+  });
+  // score
+  const C = 2 * Math.PI * 52;
+  $("#ringArc").setAttribute("stroke-dasharray", `${C * s.score / 100} ${C}`);
+  $("#ringArc").setAttribute("stroke", s.score >= 70 ? css("--good") : s.score >= 50 ? css("--ok") : css("--work"));
+  $("#ringNum").textContent = s.score;
+  const [v1, v2] = verdictFor(s.score);
+  $("#verdict").textContent = v1; $("#verdictSub").textContent = v2;
+  $("#swingMeta").textContent = `${s.view === "face" ? "Face-on" : "Down the line"} · ${state.opts.club}`;
+  // tempo
+  const t = s.ph.tempo;
+  $("#tempoBox").innerHTML = `
+    <div><span class="label">Backswing</span><b>${t.ok ? t.back.toFixed(2) + "s" : "–"}</b></div>
+    <div><span class="label">Downswing</span><b>${t.ok ? t.down.toFixed(2) + "s" : "–"}</b></div>
+    <div><span class="label">Tempo</span><b>${s.metrics.tempo ? METRICS.tempo.fmt(s.metrics.tempo.value) : "–"}</b></div>`;
+  // focus
+  const f = pickFocus(s.metrics);
+  $("#focus").innerHTML = f ? `
+    <span class="label">Your #1 focus</span>
+    <h3>${esc(METRICS[f.id].label)}: ${esc(METRICS[f.id].fmt(f.m.value))}</h3>
+    <p>${esc(adviceFor(f.id, f.m))}</p>
+    <p><b>Drill:</b> ${esc(METRICS[f.id].drill)}</p>` : `<span class="label">Your #1 focus</span><h3>Nothing big to fix on this one</h3><p>Film another angle to check the rest.</p>`;
+  // metrics
+  const rows = Object.entries(s.metrics).sort((a, b) => a[1].score - b[1].score);
+  $("#metrics").innerHTML = rows.map(([id, m]) => {
+    const d = METRICS[id], [lo, hi] = d.domain, pos = (v) => clamp((v - lo) / (hi - lo), 0, 1) * 100;
+    const st = statusOf(m.score);
+    return `<div class="metric">
+      <span class="mark ${st}" title="${st}">${m.score}</span>
+      <div class="name">${esc(d.label)}<small>${esc(d.hint)}${m.conf < 0.5 ? " · low confidence" : ""}</small></div>
+      <div class="track" aria-hidden="true"><span class="band" style="left:${pos(d.ideal[0])}%;width:${pos(Math.min(d.ideal[1], hi)) - pos(d.ideal[0])}%"></span><span class="dot" style="left:${pos(m.value)}%"></span></div>
+      <div class="val">${esc(d.fmt(m.value))}</div>
+      <p class="tip">${esc(adviceFor(id, m))}</p>
+    </div>`;
+  }).join("");
+  $("#metricNote").textContent = "Shaded band = target range";
+  // frames
+  $("#frames").innerHTML = PHASES.map(([k, l]) => `<figure><img alt="${l} position" src="${s.thumbs?.[k] || ""}"><figcaption>${l} · ${(s.times[k] / state.slow).toFixed(2)}s</figcaption></figure>`).join("");
+  // phase buttons
+  $("#phaseBtns").innerHTML = PHASES.map(([k, l]) => `<button class="btn small phase-btn" data-k="${k}">${l}</button>`).join("");
+  $("#phaseBtns").querySelectorAll("button").forEach((b) => b.onclick = () => { video.pause(); seekTo(s.times[b.dataset.k]); });
+  $("#viewerNote").textContent = s.view === "dtl" ? "Yellow line: your spine angle at address. Stay on it through impact." : "Yellow line and circle: where your hips and head started. Turn, do not slide.";
+  video.playbackRate = ui.slow ? 0.25 : 1;
+  video.pause(); seekTo(s.times.address).then(drawOverlay);
+}
+
+$("#play").onclick = async () => {
+  const s = state.swings[state.cur];
+  if (video.paused) {
+    if (video.currentTime >= s.t1 - 0.05 || video.currentTime < s.t0) await seekTo(s.times.address);
+    video.playbackRate = ui.slow ? 0.25 : 1; video.play();
+  } else video.pause();
+};
+video.addEventListener("timeupdate", () => { const s = state.swings[state.cur]; if (s && video.currentTime > s.t1) video.pause(); });
+function stepFrame(dir) {
+  const s = state.swings[state.cur]; video.pause();
+  const i = nearestFrame(s.series, video.currentTime);
+  const j = clamp((i < 0 ? 0 : i) + dir, 0, s.series.length - 1);
+  seekTo(s.series[j].t);
+}
+$("#prevF").onclick = () => stepFrame(-1);
+$("#nextF").onclick = () => stepFrame(1);
+document.addEventListener("keydown", (e) => {
+  if ($("#results").hidden || ["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName)) return;
+  if (e.key === "ArrowLeft") stepFrame(-1);
+  if (e.key === "ArrowRight") stepFrame(1);
+});
+for (const [id, key] of [["speed", "slow"], ["trail", "trail"], ["guides", "guides"]]) {
+  $("#" + id).onclick = (e) => { ui[key] = !ui[key]; e.currentTarget.setAttribute("aria-pressed", String(ui[key])); if (key === "slow") video.playbackRate = ui.slow ? 0.25 : 1; drawOverlay(); };
+}
+$("#newClip").onclick = () => { $("#results").hidden = true; $("#intake").hidden = false; video.pause(); $("#file").value = ""; };
+
+/* ============================================================
+   Storage: artifact db when available, browser storage otherwise
+   ============================================================ */
+const Store = {
+  mode: "local", db: null, user: null, me: "me", owner: true, canWrite: true,
+  ready: null,
+  local: lsGet("swinglab:v1", { players: {}, swings: {}, coach: {} }),
+  flush() { if (!lsSet("swinglab:v1", this.local)) { for (const list of Object.values(this.local.swings)) for (const s of list) delete s.thumbs; lsSet("swinglab:v1", this.local); } },
+
+  async init() {
+    try {
+      if (window.claude?.use) {
+        const [db, user] = await Promise.all([window.claude.use("db"), window.claude.use("user")]);
+        if (db && user) {
+          const id = await user.id();
+          if (id) {
+            this.db = db; this.user = user; this.me = id; this.mode = "db";
+            this.owner = await user.isOwner();
+            const cw = await user.can("data.write"); this.canWrite = cw !== false;
+          }
+        }
+      }
+    } catch (e) { console.warn("db unavailable", e); }
+    const players = await this.players();
+    if (!players.find((p) => p.id === this.me)) {
+      let name = "Me";
+      try { if (this.user) { const m = await this.user.me(); name = (m && m.name) || "Me"; } } catch {}
+      await this.savePlayer({ id: this.me, name, hand: "R", kind: "self", createdAt: Date.now(), stats: {} });
+    }
+  },
+  async players() {
+    if (this.mode === "db") {
+      const snap = await this.db.collection("crew").get();
+      return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    }
+    return Object.entries(this.local.players).map(([id, p]) => ({ id, ...p }));
+  },
+  async savePlayer(p) {
+    const { id, ...body } = p;
+    if (this.mode === "db") await this.db.doc("crew/" + id).set(body);
+    else { this.local.players[id] = body; this.flush(); }
+  },
+  async swings(pid) {
+    if (this.mode === "db") {
+      const snap = await this.db.collection(`crew/${pid}/swings`).orderBy("at", "desc").limit(500).get();
+      return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    }
+    return [...(this.local.swings[pid] || [])].sort((a, b) => b.at - a.at);
+  },
+  async addSwing(pid, s) {
+    const id = s.id || uid(); const { id: _, ...body } = s;
+    if (this.mode === "db") await this.db.doc(`crew/${pid}/swings/${id}`).set(body);
+    else { (this.local.swings[pid] ||= []).push({ id, ...body }); this.flush(); }
+    return id;
+  },
+  async deleteSwing(pid, id) {
+    if (this.mode === "db") await this.db.doc(`crew/${pid}/swings/${id}`).delete();
+    else { this.local.swings[pid] = (this.local.swings[pid] || []).filter((s) => s.id !== id); this.flush(); }
+  },
+  async coach(pid) {
+    if (this.mode === "db") { const d = await this.db.doc(`crew/${pid}/meta/coach`).get(); return d.exists ? d.data() : { notes: "", cues: [] }; }
+    return this.local.coach[pid] || { notes: "", cues: [] };
+  },
+  async saveCoach(pid, c) {
+    if (this.mode === "db") await this.db.doc(`crew/${pid}/meta/coach`).set(c);
+    else { this.local.coach[pid] = c; this.flush(); }
+  },
+};
+
+let players = [];
+let currentPid = "me";
+const canEditPlayer = (pid) => pid === Store.me || Store.owner;
+
+async function refreshPlayers() {
+  players = await Store.players();
+  const sel = $("#golfer");
+  const editable = players.filter((p) => canEditPlayer(p.id));
+  editable.sort((a, b) => (a.id === Store.me ? -1 : b.id === Store.me ? 1 : a.name.localeCompare(b.name)));
+  if (!editable.find((p) => p.id === currentPid)) currentPid = Store.me;
+  sel.innerHTML = editable.map((p) => `<option value="${esc(p.id)}">${esc(p.id === Store.me ? p.name + " (you)" : p.name)}</option>`).join("");
+  sel.value = currentPid;
+  const me = players.find((p) => p.id === currentPid);
+  if (me?.hand) $("#hand").value = me.hand;
+}
+$("#golfer").onchange = (e) => { currentPid = e.target.value; const p = players.find((x) => x.id === currentPid); if (p?.hand) $("#hand").value = p.hand; renderActiveTab(); };
+
+function swingRecord(s, opts, sessionId) {
+  return {
+    at: Date.now(), session: sessionId, club: opts.club, view: s.view, hand: opts.hand, score: s.score,
+    tempo: s.ph.tempo.ok ? { back: +s.ph.tempo.back.toFixed(3), down: +s.ph.tempo.down.toFixed(3) } : null,
+    metrics: s.metrics, thumbs: s.thumbs, engine: engine.name,
+  };
+}
+async function saveSession(swings, opts) {
+  try {
+    await Store.ready;
+    if (!canEditPlayer(currentPid)) return;
+    const sessionId = uid();
+    for (const s of swings) s.savedId = await Store.addSwing(currentPid, swingRecord(s, opts, sessionId));
+    await updateStats(currentPid);
+    toast(`Saved ${swings.length} swing${swings.length > 1 ? "s" : ""} to ${players.find((p) => p.id === currentPid)?.name || "your"} progress`);
+  } catch (e) {
+    console.error(e);
+    toast(e?.code === "quota_exceeded" ? "Storage is full. Delete some old swings in Progress." : "Could not save these swings. Your results are still shown here.");
+  }
+}
+async function updateStats(pid) {
+  const list = await Store.swings(pid);
+  const p = players.find((x) => x.id === pid) || { id: pid, name: "Me", kind: "self" };
+  const scores = list.map((s) => s.score);
+  p.stats = {
+    swings: list.length, best: scores.length ? Math.max(...scores) : null,
+    form: scores.length ? Math.round(mean(scores.slice(0, 10))) : null,
+    lastAt: list[0]?.at || null, sessions: new Set(list.map((s) => s.session)).size,
+  };
+  p.hand = $("#hand").value;
+  await Store.savePlayer(p);
+  players = await Store.players();
+}
+
+/* ============================================================
+   Progress tab
+   ============================================================ */
+function groupSessions(list) {
+  const map = new Map();
+  for (const s of [...list].reverse()) {
+    if (!map.has(s.session)) map.set(s.session, { id: s.session, at: s.at, swings: [] });
+    map.get(s.session).swings.push(s);
+  }
+  return [...map.values()].map((g) => ({ ...g, avg: Math.round(mean(g.swings.map((s) => s.score))), best: Math.max(...g.swings.map((s) => s.score)) }));
+}
+
+function chartSVG(sessions) {
+  const W = 720, H = 240, L = 36, R = 16, T = 14, B = 30;
+  const n = sessions.length;
+  const x = (i) => n === 1 ? (L + W - R) / 2 : L + (W - L - R) * i / (n - 1);
+  const y = (v) => T + (H - T - B) * (1 - v / 100);
+  let g = "";
+  for (const v of [0, 25, 50, 75, 100]) g += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)" stroke-width="1"/><text x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${v}</text>`;
+  const pts = sessions.map((s, i) => `${x(i)},${y(s.avg)}`).join(" ");
+  const bpts = sessions.map((s, i) => `${x(i)},${y(s.best)}`).join(" ");
+  const area = n > 1 ? `<polygon points="${x(0)},${y(0)} ${pts} ${x(n - 1)},${y(0)}" fill="var(--accent)" fill-opacity=".08"/>` : "";
+  const labels = sessions.map((s, i) => (n <= 8 || i % Math.ceil(n / 8) === 0 || i === n - 1) ? `<text x="${x(i)}" y="${H - 8}" text-anchor="middle">${fmtDate(s.at)}</text>` : "").join("");
+  const dots = sessions.map((s, i) => `<circle cx="${x(i)}" cy="${y(s.avg)}" r="${i === n - 1 ? 6 : 3.5}" fill="${i === n - 1 ? "var(--flag)" : "var(--accent)"}"><title>${fmtDate(s.at)}: avg ${s.avg}, best ${s.best}</title></circle>`).join("");
+  const last = sessions[n - 1];
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Swing score by session">${g}${area}
+    ${n > 1 ? `<polyline points="${bpts}" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 4"/>` : ""}
+    ${n > 1 ? `<polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2.5"/>` : ""}
+    ${dots}<text x="${x(n - 1)}" y="${y(last.avg) - 12}" text-anchor="middle" style="fill:var(--ink);font-weight:500">${last.avg}</text>${labels}</svg>`;
+}
+
+async function renderProgress() {
+  const p = players.find((x) => x.id === currentPid);
+  $("#progTitle").textContent = (p?.id === Store.me ? "Your" : (p?.name || "Golfer") + "’s") + " progress";
+  $("#storeNote").textContent = Store.mode === "db" ? "Synced to this lab" : "Saved in this browser only";
+  const list = await Store.swings(currentPid);
+  if (!list.length) {
+    $("#stats").innerHTML = "";
+    $("#chart").innerHTML = `<div class="empty"><h3>No swings yet</h3><p class="muted">Analyze your first clip and your score lands here. Every session after that draws the line.</p><button class="btn primary" onclick="switchTab('analyze')">Analyze a swing</button></div>`;
+    $("#trendTable").innerHTML = `<p class="muted">Your first and latest numbers for each check will sit side by side here.</p>`;
+    $("#history").innerHTML = `<p class="muted">Saved swings with their key frames appear here.</p>`;
+    return;
+  }
+  const sessions = groupSessions(list);
+  const scores = list.map((s) => s.score);
+  const first = sessions[0], last = sessions[sessions.length - 1];
+  const delta = last.avg - first.avg;
+  $("#stats").innerHTML = `
+    <div class="stat"><span class="label">Form (last 10)</span><b>${Math.round(mean(scores.slice(0, 10)))}</b></div>
+    <div class="stat"><span class="label">Best swing</span><b>${Math.max(...scores)}</b></div>
+    <div class="stat"><span class="label">Since first session</span><b style="color:${delta >= 0 ? "var(--good)" : "var(--work)"}">${delta >= 0 ? "+" : "−"}${Math.abs(delta)}</b></div>
+    <div class="stat"><span class="label">Swings logged</span><b>${list.length}</b></div>
+    <div class="stat"><span class="label">Sessions</span><b>${sessions.length}</b></div>`;
+  $("#chart").innerHTML = chartSVG(sessions);
+  // per-metric trend: first session avg vs latest session avg
+  const metricAvg = (g, id) => mean(g.swings.map((s) => s.metrics?.[id]?.value));
+  const scoreAvg = (g, id) => mean(g.swings.map((s) => s.metrics?.[id]?.score));
+  const ids = Object.keys(METRICS).filter((id) => list.some((s) => s.metrics?.[id]));
+  const firstWith = (id) => sessions.find((g) => g.swings.some((s) => s.metrics?.[id]));
+  const lastWith = (id) => [...sessions].reverse().find((g) => g.swings.some((s) => s.metrics?.[id]));
+  $("#trendTable").innerHTML = `<table><thead><tr><th>Check</th><th class="n">First</th><th class="n">Latest</th><th class="n">Target</th><th>Status</th></tr></thead><tbody>${
+    ids.map((id) => {
+      const d = METRICS[id], f = firstWith(id), l = lastWith(id);
+      const fs = scoreAvg(f, id), lsc = scoreAvg(l, id);
+      const arrow = f === l ? "" : lsc > fs + 3 ? " ↑" : lsc < fs - 3 ? " ↓" : " →";
+      const tgt = d.ideal[1] >= 99 ? "≥ " + d.fmt(d.ideal[0]) : d.fmt(d.ideal[0]) + " – " + d.fmt(d.ideal[1]);
+      return `<tr><td>${esc(d.label)}</td><td class="n">${esc(d.fmt(metricAvg(f, id)))}</td><td class="n">${esc(d.fmt(metricAvg(l, id)))}</td><td class="n muted">${esc(tgt.replace(/≈ /g, ""))}</td><td><span class="mark ${statusOf(lsc)}" style="display:inline-grid">${Math.round(lsc)}</span>${arrow}</td></tr>`;
+    }).join("")}</tbody></table>`;
+  const mine = canEditPlayer(currentPid);
+  $("#history").innerHTML = list.slice(0, 60).map((s) => `
+    <div class="hist">
+      <img alt="" src="${s.thumbs?.top || ""}">
+      <div><b>${s.score}</b> <span class="muted">· ${esc(s.club || "")} · ${s.view === "face" ? "Face-on" : "Down the line"}</span><br><span class="note">${new Date(s.at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}${s.metrics ? " · focus: " + esc(METRICS[pickFocus(s.metrics)?.id]?.label || "none") : ""}</span></div>
+      ${mine ? `<button class="btn small" data-del="${esc(s.id)}">Delete</button>` : ""}
+    </div>`).join("");
+  $("#history").querySelectorAll("[data-del]").forEach((b) => b.onclick = async () => {
+    if (b.dataset.armed !== "1") { b.dataset.armed = "1"; b.textContent = "Tap to confirm"; return; }
+    await Store.deleteSwing(currentPid, b.dataset.del); await updateStats(currentPid); renderProgress();
+  });
+}
+
+/* ============================================================
+   Crew tab
+   ============================================================ */
+async function renderCrew() {
+  players = await Store.players();
+  const ranked = [...players].sort((a, b) => (b.stats?.form ?? -1) - (a.stats?.form ?? -1) || (b.stats?.best ?? -1) - (a.stats?.best ?? -1));
+  $("#board").innerHTML = `<div class="rank head"><span>#</span><span>Golfer</span><span class="c">Form</span><span class="c">Best</span><span class="c hide-s">Swings</span></div>` +
+    ranked.map((p, i) => `<div class="rank">
+      <span class="pos">${p.stats?.form != null ? i + 1 : "–"}</span>
+      <span class="who">${esc(p.name)}${p.id === Store.me ? '<span class="you">you</span>' : ""}<small>${p.stats?.lastAt ? "Last swing " + fmtDate(p.stats.lastAt) : "No swings yet"}${p.kind === "guest" ? " · added by you" : ""}</small></span>
+      <span class="c">${p.stats?.form ?? "–"}</span><span class="c">${p.stats?.best ?? "–"}</span><span class="c hide-s">${p.stats?.swings ?? 0}</span>
+    </div>`).join("");
+  const me = players.find((p) => p.id === Store.me);
+  $("#meName").value = me?.name || "";
+  $("#addGuestPanel").hidden = !Store.owner;
+  $("#crewNote").textContent = Store.mode === "db"
+    ? "Share this lab with your crew. Anyone with edit access posts their own swings here."
+    : "Running locally: the crew board lives in this browser until the lab is opened from its shared link.";
+}
+$("#guestForm").onsubmit = async (e) => {
+  e.preventDefault();
+  const name = $("#guestName").value.trim(); if (!name) return;
+  const id = "g-" + name.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 20) + "-" + Math.random().toString(36).slice(2, 6);
+  await Store.savePlayer({ id, name, hand: $("#guestHand").value, kind: "guest", createdAt: Date.now(), stats: {} });
+  $("#guestName").value = "";
+  await refreshPlayers(); renderCrew(); toast(`${name} added. Pick them under Golfer to analyze their clip.`);
+};
+$("#meForm").onsubmit = async (e) => {
+  e.preventDefault();
+  const me = players.find((p) => p.id === Store.me); if (!me) return;
+  me.name = $("#meName").value.trim() || me.name;
+  await Store.savePlayer(me); await refreshPlayers(); renderCrew(); toast("Name saved");
+};
+
+/* ============================================================
+   Coach tab
+   ============================================================ */
+let coachDoc = { notes: "", cues: [] };
+async function renderCoach() {
+  coachDoc = await Store.coach(currentPid);
+  const list = await Store.swings(currentPid);
+  const recent = list.slice(0, 10);
+  const costs = {};
+  for (const s of recent) for (const [id, m] of Object.entries(s.metrics || {})) {
+    (costs[id] ||= []).push((100 - m.score) * METRICS[id].weight);
+  }
+  const top = Object.entries(costs).map(([id, arr]) => [id, mean(arr)]).filter(([, c]) => c > 5).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  $("#plan").innerHTML = top.length ? top.map(([id], i) => {
+    const d = METRICS[id];
+    const avgV = mean(recent.map((s) => s.metrics?.[id]?.value));
+    const avgS = mean(recent.map((s) => s.metrics?.[id]?.score));
+    return `<article><span class="label">Priority ${i + 1} · now ${esc(d.fmt(avgV))}</span><h3 style="font-size:17px">${esc(d.label)}</h3><p style="margin:0">${esc(adviceFor(id, { value: avgV, score: avgS }))}</p><p style="margin:0"><b>Drill:</b> ${esc(d.drill)}</p></article>`;
+  }).join("") : `<div class="empty"><h3>Plan builds itself</h3><p class="muted">Analyze a few swings and your three biggest gains show up here with a drill for each.</p></div>`;
+  renderCues();
+  $("#notes").value = coachDoc.notes || "";
+  $("#notesState").textContent = coachDoc.updatedAt ? "Saved " + fmtDate(coachDoc.updatedAt) : "";
+  const editable = canEditPlayer(currentPid);
+  $("#cueForm").hidden = !editable; $("#saveNotes").disabled = !editable;
+}
+function renderCues() {
+  const cues = coachDoc.cues || [];
+  $("#cues").innerHTML = cues.length ? cues.map((c, i) => `<label class="cue ${c.done ? "done" : ""}"><input type="checkbox" data-i="${i}" ${c.done ? "checked" : ""}><span>${esc(c.text)}</span><button class="btn small" type="button" data-rm="${i}" aria-label="Remove cue">✕</button></label>`).join("")
+    : `<p class="muted" style="margin:0">No cues yet. Add the two or three things your coach repeated most.</p>`;
+  $("#cues").querySelectorAll("input[data-i]").forEach((cb) => cb.onchange = () => { coachDoc.cues[+cb.dataset.i].done = cb.checked; persistCoach(); renderCues(); });
+  $("#cues").querySelectorAll("[data-rm]").forEach((b) => b.onclick = (e) => { e.preventDefault(); coachDoc.cues.splice(+b.dataset.rm, 1); persistCoach(); renderCues(); });
+}
+let coachSaving = Promise.resolve();
+function persistCoach() {
+  coachDoc.updatedAt = Date.now();
+  const snapshot = JSON.parse(JSON.stringify(coachDoc));
+  coachSaving = coachSaving.then(() => Store.saveCoach(currentPid, snapshot)).catch(() => toast("Could not save notes"));
+  return coachSaving;
+}
+$("#cueForm").onsubmit = (e) => {
+  e.preventDefault(); const t = $("#cueText").value.trim(); if (!t) return;
+  (coachDoc.cues ||= []).push({ text: t, done: false, at: Date.now() }); $("#cueText").value = ""; persistCoach(); renderCues();
+};
+$("#saveNotes").onclick = async () => { coachDoc.notes = $("#notes").value; await persistCoach(); $("#notesState").textContent = "Saved just now"; };
+
+/* ============================================================
+   Tabs + boot
+   ============================================================ */
+let activeTab = "analyze";
+function switchTab(name) {
+  activeTab = name;
+  document.querySelectorAll(".tab").forEach((t) => t.setAttribute("aria-selected", String(t.dataset.tab === name)));
+  for (const v of ["analyze", "progress", "crew", "coach"]) $("#v-" + v).hidden = v !== name;
+  renderActiveTab();
+}
+async function renderActiveTab() {
+  await Store.ready;
+  if (activeTab === "progress") renderProgress();
+  if (activeTab === "crew") renderCrew();
+  if (activeTab === "coach") renderCoach();
+}
+document.querySelectorAll(".tab").forEach((t) => t.onclick = () => switchTab(t.dataset.tab));
+if (["progress", "crew", "coach"].includes(location.hash.slice(1))) switchTab(location.hash.slice(1));
+
+const fileInput = $("#file"), drop = $("#drop");
+fileInput.onchange = () => { if (fileInput.files[0]) analyzeFile(fileInput.files[0]); };
+drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); const f = e.dataTransfer.files[0]; if (f) analyzeFile(f); });
+for (const id of ["view", "slowmo", "club"]) { const el = $("#" + id); const v = lsGet("swinglab:" + id, null); if (v) el.value = v; el.onchange = () => lsSet("swinglab:" + id, el.value); }
+
+function exportAnalysis() {
+  return state.swings.map((s) => ({
+    score: s.score, view: s.view, times: s.times,
+    tempo: s.ph.tempo, hold: s.ph.hold, torsoPx: s.ph.torso, downFrames: s.ph.downFrames,
+    metrics: Object.fromEntries(Object.entries(s.metrics).map(([id, m]) => [id, { ...m, display: METRICS[id].fmt(m.value) }])),
+    focus: pickFocus(s.metrics)?.id || null,
+    trace: s.series.map((f, i) => [+f.t.toFixed(3), +s.ph.H[i].toFixed(2)]),
+  }));
+}
+window.__swingLab = { analyzeFile, state, engineReady, exportAnalysis, last: null };
+
+Store.ready = Store.init().then(refreshPlayers).catch((e) => console.warn(e));
+</script>
