@@ -195,6 +195,13 @@ details > summary::-webkit-details-marker { display: none; }
 /* live coach */
 .live-stage { container-type: inline-size; position: relative; background: #000; border-radius: var(--r); overflow: hidden; aspect-ratio: 9 / 16; max-height: 70vh; width: min(100%, calc(70vh * 9 / 16)); justify-self: center; }
 .live-stage.landscape { aspect-ratio: 16 / 9; width: 100%; }
+@supports (height: 100dvh) {
+  /* keep the stage, and the big score/cue pinned to its bottom, on screen and above the fixed dock (Safari's vh is the large viewport) */
+  @media (max-width: 760px) and (orientation: portrait) { .live-stage { --live-h: min(70vh, calc(100dvh - var(--dock-h) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 190px)); } }
+  @media (max-width: 760px) and (orientation: landscape) { .live-stage { --live-h: max(140px, calc(100dvh - var(--dock-h) - env(safe-area-inset-bottom, 0px) - 150px)); } }
+  @media (min-width: 761px) and (orientation: landscape) and (max-height: 560px) { .live-stage { --live-h: max(140px, calc(100dvh - env(safe-area-inset-bottom, 0px) - 160px)); } }
+  .live-stage { max-height: var(--live-h, 70vh); width: min(100%, calc(var(--live-h, 70vh) * 9 / 16)); }
+}
 .live-stage video, .live-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .live-status { position: absolute; left: 10px; right: 10px; top: 10px; background: rgba(0,0,0,.66); color: #fff; font-family: var(--font-display); font-weight: 750; font-size: 18px; text-align: center; padding: 10px 12px; border-radius: 10px; }
 .live-status { font-size: clamp(18px, 6cqw, 30px); }
@@ -202,6 +209,9 @@ details > summary::-webkit-details-marker { display: none; }
 .live-big[hidden] { display: none; }
 .live-big b { font-size: clamp(56px, 30cqw, 160px); }
 .live-big span { font-size: clamp(20px, 8cqw, 44px); }
+.live-stage.landscape .live-big b { font-size: clamp(40px, min(19cqw, calc(var(--live-h, 70vh) * .34)), 160px); }   /* capped by the stage height so it never covers the status banner */
+.live-stage.landscape .live-big span { font-size: clamp(16px, min(4.5cqw, calc(var(--live-h, 70vh) * .08)), 44px); }
+.live-stage.landscape .live-status { font-size: clamp(16px, min(6cqw, calc(var(--live-h, 70vh) * .1)), 30px); }
 .live-status[data-state="ready"] { background: rgba(31,122,70,.85); }
 .live-status[data-state="swing"] { background: rgba(217,67,42,.85); }
 .live-result { border: 1.5px solid var(--line); border-radius: var(--r); padding: 14px; display: grid; gap: 6px; }

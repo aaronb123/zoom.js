@@ -184,7 +184,7 @@ async function createBlazePose(type, onProgress) {
 const Engines = {
   fast: null, accurate: null, error: null, listeners: new Set(),
   status: { stage: "loading", pct: 0 },
-  set(stage, pct) { this.status = { stage, pct }; this.listeners.forEach((f) => f(this.status)); },
+  set(stage, pct) { if (this.lost && stage !== "lost") return; this.status = { stage, pct }; this.listeners.forEach((f) => f(this.status)); },   // after a GPU loss a late HD download must not show "Tracker ready"
   ready: null, accurateReady: null,
 };
 Engines.ready = (async () => {

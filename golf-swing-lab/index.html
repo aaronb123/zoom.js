@@ -201,6 +201,13 @@ details > summary::-webkit-details-marker { display: none; }
 /* live coach */
 .live-stage { container-type: inline-size; position: relative; background: #000; border-radius: var(--r); overflow: hidden; aspect-ratio: 9 / 16; max-height: 70vh; width: min(100%, calc(70vh * 9 / 16)); justify-self: center; }
 .live-stage.landscape { aspect-ratio: 16 / 9; width: 100%; }
+@supports (height: 100dvh) {
+  /* keep the stage, and the big score/cue pinned to its bottom, on screen and above the fixed dock (Safari's vh is the large viewport) */
+  @media (max-width: 760px) and (orientation: portrait) { .live-stage { --live-h: min(70vh, calc(100dvh - var(--dock-h) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 190px)); } }
+  @media (max-width: 760px) and (orientation: landscape) { .live-stage { --live-h: max(140px, calc(100dvh - var(--dock-h) - env(safe-area-inset-bottom, 0px) - 150px)); } }
+  @media (min-width: 761px) and (orientation: landscape) and (max-height: 560px) { .live-stage { --live-h: max(140px, calc(100dvh - env(safe-area-inset-bottom, 0px) - 160px)); } }
+  .live-stage { max-height: var(--live-h, 70vh); width: min(100%, calc(var(--live-h, 70vh) * 9 / 16)); }
+}
 .live-stage video, .live-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .live-status { position: absolute; left: 10px; right: 10px; top: 10px; background: rgba(0,0,0,.66); color: #fff; font-family: var(--font-display); font-weight: 750; font-size: 18px; text-align: center; padding: 10px 12px; border-radius: 10px; }
 .live-status { font-size: clamp(18px, 6cqw, 30px); }
@@ -208,6 +215,9 @@ details > summary::-webkit-details-marker { display: none; }
 .live-big[hidden] { display: none; }
 .live-big b { font-size: clamp(56px, 30cqw, 160px); }
 .live-big span { font-size: clamp(20px, 8cqw, 44px); }
+.live-stage.landscape .live-big b { font-size: clamp(40px, min(19cqw, calc(var(--live-h, 70vh) * .34)), 160px); }   /* capped by the stage height so it never covers the status banner */
+.live-stage.landscape .live-big span { font-size: clamp(16px, min(4.5cqw, calc(var(--live-h, 70vh) * .08)), 44px); }
+.live-stage.landscape .live-status { font-size: clamp(16px, min(6cqw, calc(var(--live-h, 70vh) * .1)), 30px); }
 .live-status[data-state="ready"] { background: rgba(31,122,70,.85); }
 .live-status[data-state="swing"] { background: rgba(217,67,42,.85); }
 .live-result { border: 1.5px solid var(--line); border-radius: var(--r); padding: 14px; display: grid; gap: 6px; }
@@ -843,7 +853,7 @@ async function createBlazePose(type, onProgress) {
 const Engines = {
   fast: null, accurate: null, error: null, listeners: new Set(),
   status: { stage: "loading", pct: 0 },
-  set(stage, pct) { this.status = { stage, pct }; this.listeners.forEach((f) => f(this.status)); },
+  set(stage, pct) { if (this.lost && stage !== "lost") return; this.status = { stage, pct }; this.listeners.forEach((f) => f(this.status)); },   // after a GPU loss a late HD download must not show "Tracker ready"
   ready: null, accurateReady: null,
 };
 Engines.ready = (async () => {
@@ -1954,7 +1964,7 @@ const css = (name) => getComputedStyle(document.documentElement).getPropertyValu
 /* ---------- engine status ---------- */
 Engines.listeners.add(({ stage, pct }) => {
   const el = $("#engine"), txt = $("#engineText");
-  el.dataset.state = stage === "error" ? "error" : stage === "ready" ? "ready" : "loading";
+  el.dataset.state = stage === "error" || stage === "lost" ? "error" : stage === "ready" ? "ready" : "loading";
   txt.textContent = stage === "loading" ? `Loading the swing tracker ${Math.round(pct * 100)}%`
     : stage === "fast" || stage === "upgrading" ? `Ready · HD tracker downloading ${Math.round(Math.max(0, pct - 0.2) / 0.8 * 100)}%`
     : stage === "ready" ? "Tracker ready" : stage === "lost" ? "Tracker stopped" : "Tracker failed to load";
@@ -1969,6 +1979,7 @@ function showEngineError(e, lead = "The swing tracker didn't finish downloading.
   box.hidden = false; $("#engineRetry").onclick = () => location.reload();
 }
 function hideError() { $("#errorBox").hidden = true; }
+function engineLost() { if (!Engines.lost) return false; showEngineError(null, "The swing tracker stopped (the phone reclaimed graphics memory)."); return true; }
 
 /* ---------- settings ---------- */
 const settings = lsGet("swinglab:settings", { club: "7 iron", view: "auto", slowmo: "0", voiceOn: "off" });
@@ -2033,6 +2044,7 @@ function setWork(pct, step, note) {
 }
 
 async function analyze(file, over = {}) {
+  if (engineLost()) return;   // dead GPU context: keep the explanation and Try again up, don't run a doomed analysis
   hideError();
   $("#intake").hidden = true; $("#results").hidden = true; $("#working").hidden = false;   // feedback even while the tracker downloads
   $("#workTitle").textContent = "Reading your swing…"; setWork(0, "find", Engines.fast ? "" : "Loading the swing tracker…");
@@ -2637,8 +2649,11 @@ function swingRecord(s, opts, sessionId, extra = {}) {
     checks, fix: pickFix(s.checks, s.view)?.id || null, tags: s.tags || [], thumbs: s.thumbs?.top ? { top: s.thumbs.top } : {}, ...extra,
   };
 }
+let a2hsDue = false;   // Home Screen tip held back while the live coach is on screen; stopLive shows it
+function a2hsTip() { toast("Tip: Safari clears saved swings if you skip a week. Share › Add to Home Screen keeps them. Already have swings? Progress › Export first, then Import in the Home Screen app.", 9000); }
 async function saveSession(swings, opts, extra) {
   let saved = false;
+  const live = !!extra?.live && !$("#live").hidden;   // live coach on screen: the big score confirms the save, and a toast would sit on it
   try {
     await Store.ready;
     if (!canEditPlayer(currentPid)) return false;
@@ -2649,11 +2664,11 @@ async function saveSession(swings, opts, extra) {
     if (Store.mode === "local" && !window.claude?.use) {
       if (navigator.standalone) try { navigator.storage?.persist?.().catch(() => {}); } catch {}
       if (navigator.standalone === false && !lsGet("swinglab:a2hsTip", false)) {
-        lsSet("swinglab:a2hsTip", true);
-        setTimeout(() => toast("Tip: Safari clears saved swings if you skip a week. Share › Add to Home Screen keeps them. Already have swings? Progress › Export first, then Import in the Home Screen app.", 9000), 3200);
+        if (live) a2hsDue = true;
+        else { lsSet("swinglab:a2hsTip", true); setTimeout(a2hsTip, 3200); }
       }
     }
-    toast(`Saved ${swings.length} swing${swings.length > 1 ? "s" : ""} to ${players.find((x) => x.id === pid)?.id === Store.me ? "your" : (players.find((x) => x.id === pid)?.name || "their") + "’s"} progress`);
+    if (!live) toast(`Saved ${swings.length} swing${swings.length > 1 ? "s" : ""} to ${players.find((x) => x.id === pid)?.id === Store.me ? "your" : (players.find((x) => x.id === pid)?.name || "their") + "’s"} progress`);
   } catch (e) {
     console.error(e);
     toast(e?.code === "quota_exceeded" ? "Storage is full. Delete some old swings in Progress." : "Could not save these swings. Your results are still here.");
@@ -2944,6 +2959,7 @@ $("#lessonFile").addEventListener("click", unlockVideo);
 $("#lessonFile").onchange = async () => {
   const file = $("#lessonFile").files[0]; $("#lessonFile").value = "";
   if (!file) return;
+  if (engineLost()) return;
   const out = $("#lessonOut");
   try { await Engines.ready; } catch (e) { showEngineError(e); return; }
   const opts = { view: $("#view").value, hand: $("#hand").value, slow: +$("#slowmo").value, club: settings.club, heightCm: heightFor(currentPlayer()), coarseStep: 0.3 };
@@ -3047,10 +3063,15 @@ const liveVideo = $("#liveVideo"), liveOverlay = $("#liveOverlay"), lctx = liveO
 function liveSay(text, force = false, interrupt = true) {
   const now = performance.now();
   if (!Live.voice || (!force && now - Live.lastSay < 4500)) return false;
-  Live.lastSay = now; return speak(text, interrupt);
+  Live.lastSay = now;
+  if (!interrupt && speechBusy()) { Live.next = text; Live.nextT = now; return true; }   // one line waits, newest wins: no backlog talking over the swing
+  Live.next = null; return speak(text, interrupt);
 }
+function speechBusy() { try { return speechSynthesis.speaking || speechSynthesis.pending; } catch { return false; } }
+// Runs every tracked frame. After 4 s it queues the line anyway, in case a browser never clears `speaking`.
+function livePump() { if (Live.next && Live.voice && (!speechBusy() || performance.now() - Live.nextT > 4000)) { const t = Live.next; Live.next = null; speak(t, false); } }
 function setStatus(state, text) {
-  if (Live.state !== state) { Live.state = state; Live.stateT = performance.now(); }
+  if (Live.state !== state) { Live.state = state; Live.stateT = performance.now(); Live.next = null; }   // a waiting line is only said in the state that queued it
   const el = $("#liveStatus"); el.dataset.state = state; el.textContent = text;
 }
 function renderFocus() {
@@ -3073,11 +3094,15 @@ function fitLiveStage() {
 liveVideo.addEventListener("resize", fitLiveStage);   // iOS rotates the camera track when the phone turns
 function cameraError(e) {
   const n = e?.name;
-  return n === "NotAllowedError" || n === "SecurityError" ? "No camera access. Tap Stop, then Live coach, and choose Allow. Still blocked? Tap aA (or the page icon) next to the address › Website Settings › Camera › Allow."
+  const still = navigator.standalone   // Home Screen app: no address bar or aA menu, only the system setting
+    ? "Still blocked? Open Settings › Apps › Safari › Camera (Settings › Safari › Camera before iOS 18), choose Ask or Allow, then reopen Swing Lab."
+    : "Still blocked? Tap aA (or the page icon) next to the address › Website Settings › Camera › Allow.";
+  return n === "NotAllowedError" || n === "SecurityError" ? "No camera access. Tap Stop, then Live coach, and choose Allow. " + still
     : n === "NotReadableError" || n === "AbortError" ? "The camera is busy. Close any app or call using it, then tap Stop and Live coach again."
     : n === "NotFoundError" ? "No camera found on this device." : "The camera could not start. Tap Stop and try again.";
 }
 async function startLive() {
+  if (engineLost()) return;
   const gen = ++Live.gen, stale = () => gen !== Live.gen;   // Stop, a tab, a lock or a second tap cancels this start
   holdAwake(gen);
   hideError(); hideLiveBig();
@@ -3095,29 +3120,33 @@ async function startLive() {
   await liveVideo.play().catch(() => {});
   if (liveVideo.readyState < 2) await loaded;
   if (!Engines.fast) {
-    const onEng = ({ stage, pct }) => { if (!stale() && stage === "loading") setStatus("frame", `Loading the tracker ${Math.round(Math.min(1, pct / 0.2) * 100)}%… frame yourself meanwhile`); };
+    const onEng = ({ stage, pct }) => { if (!stale() && stage === "loading") setStatus("frame", pct > 0 ? `Loading the tracker ${Math.round(Math.min(1, pct / 0.2) * 100)}%… frame yourself meanwhile` : "Loading the tracker… frame yourself meanwhile"); };
     Engines.listeners.add(onEng);
+    onEng(Engines.status);   // the libraries and model JSON load without progress events: don't leave "Starting the camera…" up
     try { await Engines.ready; } catch (e) { if (!stale()) { stopLive(); showEngineError(e); } return; }
     finally { Engines.listeners.delete(onEng); }
   }
   if (stale()) return;   // stopLive already stopped this stream
   fitLiveStage();
   Engines.fast.reset();
-  Live.running = true; Live.buf = []; Live.lostT = null; Live.fpsT = []; Live.snaps.forEach((s) => s.bmp?.close?.()); Live.snaps = [];
+  Live.running = true; Live.buf = []; Live.lostT = null; Live.blink = false; Live.hush = false; Live.fpsT = []; Live.snaps.forEach((s) => s.bmp?.close?.()); Live.snaps = [];
   setStatus("frame", "Prop me at hip height, 3–4 m away, then step in");
   liveSay("Prop me up at hip height, about three or four metres away, then step into the frame so I can see all of you.", true);
   liveTick(gen);
 }
 function stopLive(pause = false) {
   Live.gen++; Live.running = false;
+  Live.next = null; try { speechSynthesis.cancel(); } catch {}   // nothing queued keeps talking after Stop, a tab change, a lock or Full analysis
   dropClip(); releaseAwake(); hideLiveBig();
   Live.stream?.getTracks().forEach((t) => t.stop()); Live.stream = null; liveVideo.srcObject = null;
+  lctx.clearRect(0, 0, liveOverlay.width, liveOverlay.height);   // no frozen skeleton on the Paused stage or the next start
   if (pause) {
     $("#liveResume").hidden = false;
     setStatus("frame", "Paused: the screen locked or you left the page. Tap Resume." + (navigator.standalone ? " To stop it locking: turn off Low Power Mode, then Settings › Display & Brightness › Auto-Lock › Never." : ""));
     return;
   }
   $("#live").hidden = true; $("#intake").hidden = false;
+  if (a2hsDue) { a2hsDue = false; lsSet("swinglab:a2hsTip", true); setTimeout(a2hsTip, 600); }
 }
 
 function liveTick(gen = Live.gen) {
@@ -3134,6 +3163,7 @@ function liveTick(gen = Live.gen) {
     snapshot(t);
     drawLive(kp);
     liveStep(t, kp);
+    livePump();
     Live.fpsT.push(performance.now()); while (Live.fpsT.length > 30) Live.fpsT.shift();
     if (Live.fpsT.length > 5) $("#liveFps").textContent = `${Math.round(1000 * (Live.fpsT.length - 1) / (Live.fpsT.at(-1) - Live.fpsT[0]))} fps tracking`;
     next();
@@ -3164,7 +3194,7 @@ function drawLive(kp) {
 /* Swing detection on the live stream:
    frame -> (whole body seen) -> settle -> (hands still and low for 0.3 s) -> ready -> (hands above shoulders) -> swing
    -> (body still after the finish, or 3.5 s) -> analyse. Brief tracking drop-outs are ridden out, not treated as leaving. */
-function framePrompt(why) { setStatus("frame", why); if (!Live.said.has(why) && liveSay(why + ".", false, false)) Live.said.add(why); }   // each prompt once per lost spell
+function framePrompt(why, say = true) { setStatus("frame", why); if (say && !Live.said.has(why) && liveSay(why + ".", false, false)) Live.said.add(why); }   // each prompt once per lost spell
 function liveStep(t, kp) {
   const W = liveVideo.videoWidth, H = liveVideo.videoHeight;
   const recent = Live.buf.filter((f) => f.kp && t - f.t <= 0.45);
@@ -3179,8 +3209,9 @@ function liveStep(t, kp) {
     if (Live.state === "frame" && since > 1.2 && t - Live.resetT > 1) { Engines.fast.reset(); Live.resetT = t; }   // let go of a bystander
     if (since > 1.2 || Live.state !== "frame") {
       const why = !kp ? "I can't see you" : Math.max(kp.lank.y, kp.rank.y) > 0.98 * H ? "Step back, I can't see your feet" : kp.nose.y < 0.02 * H ? "Step back, I can't see your head" : "Whole body in shot, please";
+      if (Live.state !== "frame") Live.blink = true;   // fell out of settle/ready: greet on return only if a prompt was spoken
       if (Live.state === "ready") dropClip();
-      framePrompt(why);
+      framePrompt(why, t - Live.lostT > 1.5);           // a short drop-out at address: show it, don't say it
     }
     return;
   }
@@ -3192,12 +3223,13 @@ function liveStep(t, kp) {
   const still = recent.length >= 3 && t - recent[0].t >= 0.3 && recent.every((f) => dist(handCentre(f.kp), hand) < 0.05 * bodyH);   // time-based: works down to ~5 fps
   if (Live.state === "frame") {
     if (bodyH < 0.35 * H) { framePrompt("Come a little closer"); return; }
+    const greet = !Live.blink || Live.said.size > 0; Live.blink = false; Live.hush = !greet;
     Live.said.clear();
-    setStatus("settle", "Set up to the ball"); liveSay("Got you. Set up when you're ready.", true, false); return;
+    setStatus("settle", "Set up to the ball"); if (greet) liveSay("Got you. Set up when you're ready.", true, false); return;
   }
   if (Live.state === "settle") {
     if (still && hand.y > hip.y - 0.3 * torso) {
-      setStatus("ready", "Ready. Swing when you like"); liveSay("Ready.", true, false);
+      setStatus("ready", "Ready. Swing when you like"); if (!Live.hush) liveSay("Ready.", true, false); Live.hush = false;   // re-armed after a silent drop-out: stay quiet
       Live.readyT = t; Live.stillT = t; startClip();
     }
     return;
@@ -3256,8 +3288,9 @@ async function analyseLive(tEnd) {
       s = { series, ev, viewInfo, fps: fs, stride: 1, t0, t1: tEnd, crop: null };
       s.quality = assessQuality(series, ev, W, H, viewInfo, fs, 1, true);
       Object.assign(s, computeChecks(series, ev, opts, viewInfo));
+      s.notes = s.notes.filter((n) => !n.includes("Recorded at"));   // live is real time and has no "Recorded at" setting (keeps the Plays note)
       // Live tracking on a phone often runs well under 60 fps: too few downswing frames to time rhythm honestly.
-      if ((fs < 45 || ev.downFrames < 9) && s.checks.tempo) { s.checks.tempo.measured = false; s.slowTrack = Math.round(fs); }
+      if (fs < 45 || ev.downFrames < 9) { if (s.checks.tempo) s.checks.tempo.measured = false; s.slowTrack = Math.round(fs); }
       if (s.quality.cameraMoved) for (const id of ["hipSway", "headSway", "weightShift", "headImpact", "stayBehind", "posture", "headHeight"]) if (s.checks[id]) s.checks[id].measured = false;
       s.total = scoreSwing(s.checks, s.view);
       if (s.quality.level === "poor" && s.total.score > 54) { s.total.score = 54; s.total.capped = "Tracking was poor, so the score is capped at 54."; }

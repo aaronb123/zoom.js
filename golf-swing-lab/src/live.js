@@ -28,10 +28,15 @@ const liveVideo = $("#liveVideo"), liveOverlay = $("#liveOverlay"), lctx = liveO
 function liveSay(text, force = false, interrupt = true) {
   const now = performance.now();
   if (!Live.voice || (!force && now - Live.lastSay < 4500)) return false;
-  Live.lastSay = now; return speak(text, interrupt);
+  Live.lastSay = now;
+  if (!interrupt && speechBusy()) { Live.next = text; Live.nextT = now; return true; }   // one line waits, newest wins: no backlog talking over the swing
+  Live.next = null; return speak(text, interrupt);
 }
+function speechBusy() { try { return speechSynthesis.speaking || speechSynthesis.pending; } catch { return false; } }
+// Runs every tracked frame. After 4 s it queues the line anyway, in case a browser never clears `speaking`.
+function livePump() { if (Live.next && Live.voice && (!speechBusy() || performance.now() - Live.nextT > 4000)) { const t = Live.next; Live.next = null; speak(t, false); } }
 function setStatus(state, text) {
-  if (Live.state !== state) { Live.state = state; Live.stateT = performance.now(); }
+  if (Live.state !== state) { Live.state = state; Live.stateT = performance.now(); Live.next = null; }   // a waiting line is only said in the state that queued it
   const el = $("#liveStatus"); el.dataset.state = state; el.textContent = text;
 }
 function renderFocus() {
@@ -54,11 +59,15 @@ function fitLiveStage() {
 liveVideo.addEventListener("resize", fitLiveStage);   // iOS rotates the camera track when the phone turns
 function cameraError(e) {
   const n = e?.name;
-  return n === "NotAllowedError" || n === "SecurityError" ? "No camera access. Tap Stop, then Live coach, and choose Allow. Still blocked? Tap aA (or the page icon) next to the address › Website Settings › Camera › Allow."
+  const still = navigator.standalone   // Home Screen app: no address bar or aA menu, only the system setting
+    ? "Still blocked? Open Settings › Apps › Safari › Camera (Settings › Safari › Camera before iOS 18), choose Ask or Allow, then reopen Swing Lab."
+    : "Still blocked? Tap aA (or the page icon) next to the address › Website Settings › Camera › Allow.";
+  return n === "NotAllowedError" || n === "SecurityError" ? "No camera access. Tap Stop, then Live coach, and choose Allow. " + still
     : n === "NotReadableError" || n === "AbortError" ? "The camera is busy. Close any app or call using it, then tap Stop and Live coach again."
     : n === "NotFoundError" ? "No camera found on this device." : "The camera could not start. Tap Stop and try again.";
 }
 async function startLive() {
+  if (engineLost()) return;
   const gen = ++Live.gen, stale = () => gen !== Live.gen;   // Stop, a tab, a lock or a second tap cancels this start
   holdAwake(gen);
   hideError(); hideLiveBig();
@@ -76,29 +85,33 @@ async function startLive() {
   await liveVideo.play().catch(() => {});
   if (liveVideo.readyState < 2) await loaded;
   if (!Engines.fast) {
-    const onEng = ({ stage, pct }) => { if (!stale() && stage === "loading") setStatus("frame", `Loading the tracker ${Math.round(Math.min(1, pct / 0.2) * 100)}%… frame yourself meanwhile`); };
+    const onEng = ({ stage, pct }) => { if (!stale() && stage === "loading") setStatus("frame", pct > 0 ? `Loading the tracker ${Math.round(Math.min(1, pct / 0.2) * 100)}%… frame yourself meanwhile` : "Loading the tracker… frame yourself meanwhile"); };
     Engines.listeners.add(onEng);
+    onEng(Engines.status);   // the libraries and model JSON load without progress events: don't leave "Starting the camera…" up
     try { await Engines.ready; } catch (e) { if (!stale()) { stopLive(); showEngineError(e); } return; }
     finally { Engines.listeners.delete(onEng); }
   }
   if (stale()) return;   // stopLive already stopped this stream
   fitLiveStage();
   Engines.fast.reset();
-  Live.running = true; Live.buf = []; Live.lostT = null; Live.fpsT = []; Live.snaps.forEach((s) => s.bmp?.close?.()); Live.snaps = [];
+  Live.running = true; Live.buf = []; Live.lostT = null; Live.blink = false; Live.hush = false; Live.fpsT = []; Live.snaps.forEach((s) => s.bmp?.close?.()); Live.snaps = [];
   setStatus("frame", "Prop me at hip height, 3–4 m away, then step in");
   liveSay("Prop me up at hip height, about three or four metres away, then step into the frame so I can see all of you.", true);
   liveTick(gen);
 }
 function stopLive(pause = false) {
   Live.gen++; Live.running = false;
+  Live.next = null; try { speechSynthesis.cancel(); } catch {}   // nothing queued keeps talking after Stop, a tab change, a lock or Full analysis
   dropClip(); releaseAwake(); hideLiveBig();
   Live.stream?.getTracks().forEach((t) => t.stop()); Live.stream = null; liveVideo.srcObject = null;
+  lctx.clearRect(0, 0, liveOverlay.width, liveOverlay.height);   // no frozen skeleton on the Paused stage or the next start
   if (pause) {
     $("#liveResume").hidden = false;
     setStatus("frame", "Paused: the screen locked or you left the page. Tap Resume." + (navigator.standalone ? " To stop it locking: turn off Low Power Mode, then Settings › Display & Brightness › Auto-Lock › Never." : ""));
     return;
   }
   $("#live").hidden = true; $("#intake").hidden = false;
+  if (a2hsDue) { a2hsDue = false; lsSet("swinglab:a2hsTip", true); setTimeout(a2hsTip, 600); }
 }
 
 function liveTick(gen = Live.gen) {
@@ -115,6 +128,7 @@ function liveTick(gen = Live.gen) {
     snapshot(t);
     drawLive(kp);
     liveStep(t, kp);
+    livePump();
     Live.fpsT.push(performance.now()); while (Live.fpsT.length > 30) Live.fpsT.shift();
     if (Live.fpsT.length > 5) $("#liveFps").textContent = `${Math.round(1000 * (Live.fpsT.length - 1) / (Live.fpsT.at(-1) - Live.fpsT[0]))} fps tracking`;
     next();
@@ -145,7 +159,7 @@ function drawLive(kp) {
 /* Swing detection on the live stream:
    frame -> (whole body seen) -> settle -> (hands still and low for 0.3 s) -> ready -> (hands above shoulders) -> swing
    -> (body still after the finish, or 3.5 s) -> analyse. Brief tracking drop-outs are ridden out, not treated as leaving. */
-function framePrompt(why) { setStatus("frame", why); if (!Live.said.has(why) && liveSay(why + ".", false, false)) Live.said.add(why); }   // each prompt once per lost spell
+function framePrompt(why, say = true) { setStatus("frame", why); if (say && !Live.said.has(why) && liveSay(why + ".", false, false)) Live.said.add(why); }   // each prompt once per lost spell
 function liveStep(t, kp) {
   const W = liveVideo.videoWidth, H = liveVideo.videoHeight;
   const recent = Live.buf.filter((f) => f.kp && t - f.t <= 0.45);
@@ -160,8 +174,9 @@ function liveStep(t, kp) {
     if (Live.state === "frame" && since > 1.2 && t - Live.resetT > 1) { Engines.fast.reset(); Live.resetT = t; }   // let go of a bystander
     if (since > 1.2 || Live.state !== "frame") {
       const why = !kp ? "I can't see you" : Math.max(kp.lank.y, kp.rank.y) > 0.98 * H ? "Step back, I can't see your feet" : kp.nose.y < 0.02 * H ? "Step back, I can't see your head" : "Whole body in shot, please";
+      if (Live.state !== "frame") Live.blink = true;   // fell out of settle/ready: greet on return only if a prompt was spoken
       if (Live.state === "ready") dropClip();
-      framePrompt(why);
+      framePrompt(why, t - Live.lostT > 1.5);           // a short drop-out at address: show it, don't say it
     }
     return;
   }
@@ -173,12 +188,13 @@ function liveStep(t, kp) {
   const still = recent.length >= 3 && t - recent[0].t >= 0.3 && recent.every((f) => dist(handCentre(f.kp), hand) < 0.05 * bodyH);   // time-based: works down to ~5 fps
   if (Live.state === "frame") {
     if (bodyH < 0.35 * H) { framePrompt("Come a little closer"); return; }
+    const greet = !Live.blink || Live.said.size > 0; Live.blink = false; Live.hush = !greet;
     Live.said.clear();
-    setStatus("settle", "Set up to the ball"); liveSay("Got you. Set up when you're ready.", true, false); return;
+    setStatus("settle", "Set up to the ball"); if (greet) liveSay("Got you. Set up when you're ready.", true, false); return;
   }
   if (Live.state === "settle") {
     if (still && hand.y > hip.y - 0.3 * torso) {
-      setStatus("ready", "Ready. Swing when you like"); liveSay("Ready.", true, false);
+      setStatus("ready", "Ready. Swing when you like"); if (!Live.hush) liveSay("Ready.", true, false); Live.hush = false;   // re-armed after a silent drop-out: stay quiet
       Live.readyT = t; Live.stillT = t; startClip();
     }
     return;
@@ -237,8 +253,9 @@ async function analyseLive(tEnd) {
       s = { series, ev, viewInfo, fps: fs, stride: 1, t0, t1: tEnd, crop: null };
       s.quality = assessQuality(series, ev, W, H, viewInfo, fs, 1, true);
       Object.assign(s, computeChecks(series, ev, opts, viewInfo));
+      s.notes = s.notes.filter((n) => !n.includes("Recorded at"));   // live is real time and has no "Recorded at" setting (keeps the Plays note)
       // Live tracking on a phone often runs well under 60 fps: too few downswing frames to time rhythm honestly.
-      if ((fs < 45 || ev.downFrames < 9) && s.checks.tempo) { s.checks.tempo.measured = false; s.slowTrack = Math.round(fs); }
+      if (fs < 45 || ev.downFrames < 9) { if (s.checks.tempo) s.checks.tempo.measured = false; s.slowTrack = Math.round(fs); }
       if (s.quality.cameraMoved) for (const id of ["hipSway", "headSway", "weightShift", "headImpact", "stayBehind", "posture", "headHeight"]) if (s.checks[id]) s.checks[id].measured = false;
       s.total = scoreSwing(s.checks, s.view);
       if (s.quality.level === "poor" && s.total.score > 54) { s.total.score = 54; s.total.capped = "Tracking was poor, so the score is capped at 54."; }

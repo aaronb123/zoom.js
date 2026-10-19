@@ -20,7 +20,7 @@ const css = (name) => getComputedStyle(document.documentElement).getPropertyValu
 /* ---------- engine status ---------- */
 Engines.listeners.add(({ stage, pct }) => {
   const el = $("#engine"), txt = $("#engineText");
-  el.dataset.state = stage === "error" ? "error" : stage === "ready" ? "ready" : "loading";
+  el.dataset.state = stage === "error" || stage === "lost" ? "error" : stage === "ready" ? "ready" : "loading";
   txt.textContent = stage === "loading" ? `Loading the swing tracker ${Math.round(pct * 100)}%`
     : stage === "fast" || stage === "upgrading" ? `Ready · HD tracker downloading ${Math.round(Math.max(0, pct - 0.2) / 0.8 * 100)}%`
     : stage === "ready" ? "Tracker ready" : stage === "lost" ? "Tracker stopped" : "Tracker failed to load";
@@ -35,6 +35,7 @@ function showEngineError(e, lead = "The swing tracker didn't finish downloading.
   box.hidden = false; $("#engineRetry").onclick = () => location.reload();
 }
 function hideError() { $("#errorBox").hidden = true; }
+function engineLost() { if (!Engines.lost) return false; showEngineError(null, "The swing tracker stopped (the phone reclaimed graphics memory)."); return true; }
 
 /* ---------- settings ---------- */
 const settings = lsGet("swinglab:settings", { club: "7 iron", view: "auto", slowmo: "0", voiceOn: "off" });
@@ -99,6 +100,7 @@ function setWork(pct, step, note) {
 }
 
 async function analyze(file, over = {}) {
+  if (engineLost()) return;   // dead GPU context: keep the explanation and Try again up, don't run a doomed analysis
   hideError();
   $("#intake").hidden = true; $("#results").hidden = true; $("#working").hidden = false;   // feedback even while the tracker downloads
   $("#workTitle").textContent = "Reading your swing…"; setWork(0, "find", Engines.fast ? "" : "Loading the swing tracker…");
@@ -703,8 +705,11 @@ function swingRecord(s, opts, sessionId, extra = {}) {
     checks, fix: pickFix(s.checks, s.view)?.id || null, tags: s.tags || [], thumbs: s.thumbs?.top ? { top: s.thumbs.top } : {}, ...extra,
   };
 }
+let a2hsDue = false;   // Home Screen tip held back while the live coach is on screen; stopLive shows it
+function a2hsTip() { toast("Tip: Safari clears saved swings if you skip a week. Share › Add to Home Screen keeps them. Already have swings? Progress › Export first, then Import in the Home Screen app.", 9000); }
 async function saveSession(swings, opts, extra) {
   let saved = false;
+  const live = !!extra?.live && !$("#live").hidden;   // live coach on screen: the big score confirms the save, and a toast would sit on it
   try {
     await Store.ready;
     if (!canEditPlayer(currentPid)) return false;
@@ -715,11 +720,11 @@ async function saveSession(swings, opts, extra) {
     if (Store.mode === "local" && !window.claude?.use) {
       if (navigator.standalone) try { navigator.storage?.persist?.().catch(() => {}); } catch {}
       if (navigator.standalone === false && !lsGet("swinglab:a2hsTip", false)) {
-        lsSet("swinglab:a2hsTip", true);
-        setTimeout(() => toast("Tip: Safari clears saved swings if you skip a week. Share › Add to Home Screen keeps them. Already have swings? Progress › Export first, then Import in the Home Screen app.", 9000), 3200);
+        if (live) a2hsDue = true;
+        else { lsSet("swinglab:a2hsTip", true); setTimeout(a2hsTip, 3200); }
       }
     }
-    toast(`Saved ${swings.length} swing${swings.length > 1 ? "s" : ""} to ${players.find((x) => x.id === pid)?.id === Store.me ? "your" : (players.find((x) => x.id === pid)?.name || "their") + "’s"} progress`);
+    if (!live) toast(`Saved ${swings.length} swing${swings.length > 1 ? "s" : ""} to ${players.find((x) => x.id === pid)?.id === Store.me ? "your" : (players.find((x) => x.id === pid)?.name || "their") + "’s"} progress`);
   } catch (e) {
     console.error(e);
     toast(e?.code === "quota_exceeded" ? "Storage is full. Delete some old swings in Progress." : "Could not save these swings. Your results are still here.");
@@ -1010,6 +1015,7 @@ $("#lessonFile").addEventListener("click", unlockVideo);
 $("#lessonFile").onchange = async () => {
   const file = $("#lessonFile").files[0]; $("#lessonFile").value = "";
   if (!file) return;
+  if (engineLost()) return;
   const out = $("#lessonOut");
   try { await Engines.ready; } catch (e) { showEngineError(e); return; }
   const opts = { view: $("#view").value, hand: $("#hand").value, slow: +$("#slowmo").value, club: settings.club, heightCm: heightFor(currentPlayer()), coarseStep: 0.3 };
