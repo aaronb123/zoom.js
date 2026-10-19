@@ -120,7 +120,7 @@
         </div>
         <ul>
           <li>Whole body and club in shot, about 3–4 m away, phone at hip height.</li>
-          <li>Normal video at 60 fps is best (iPhone: Settings › Camera › Record Video › 1080p at 60). Skip the Slo-mo mode: it speeds up and slows down, which throws off the timing.</li>
+          <li>Normal video at 60 fps is best: on iPhone set Settings › Camera › Record Video › 1080p at 60, film with the Camera app, then tap Choose a video. (Record a swing uses a quick 30 fps camera, so timing readings are approximate.) Skip the Slo-mo mode: it speeds up and slows down, which throws off the timing.</li>
           <li>Only you in the frame. At Topgolf, film from the side of your bay.</li>
           <li>Hold your finish for a couple of seconds.</li>
         </ul>
@@ -128,12 +128,14 @@
     </div>
 
     <div class="panel live" id="live" hidden>
-      <div class="row spread"><h2>Live coach</h2><button class="btn small" id="liveStop">Stop</button></div>
+      <div class="row spread"><h2>Live coach</h2><span class="row"><button class="btn small primary" id="liveResume" type="button" hidden>Resume</button><button class="btn small" id="liveStop" type="button">Stop</button></span></div>
       <div class="live-stage" id="liveStage">
         <video id="liveVideo" playsinline muted autoplay></video>
         <canvas id="liveOverlay"></canvas>
         <div class="live-status" id="liveStatus" role="status" aria-live="polite">Starting the camera…</div>
+        <div class="live-big" id="liveBig" hidden><b id="liveBigScore"></b><span id="liveBigCue"></span></div>
       </div>
+      <p class="note" id="liveSoundHint">No voice? Turn off Silent mode (side switch, or the bell in Control Centre) and turn the volume up. The score also shows big on screen.</p>
       <div class="stack" style="gap: 6px;">
         <span class="label">Coach me on</span>
         <div class="chips" id="liveFocus" role="group" aria-label="Focus"></div>
@@ -145,7 +147,7 @@
       </div>
       <div class="live-result" id="liveResult" hidden></div>
       <div class="history" id="liveList"></div>
-      <p class="note">Prop the phone at hip height, 3–4 m away, whole body in shot. Settle at address and it says “ready”, then just swing. It talks after every swing. Each swing is recorded so you can run the full, most accurate analysis on it.</p>
+      <p class="note">Prop the phone at hip height, 3–4 m away, whole body in shot. Settle at address and it says “ready”, then just swing. It talks after every swing. Each swing is recorded so you can run the full, most accurate analysis on it. Only you in shot: start it, then walk in, and keep friends and the next bay out of frame.</p>
     </div>
 
     <div class="panel working" id="working" hidden>

@@ -316,8 +316,10 @@ function computeChecks(series, ev, opts, viewInfo) {
     put("spineTop", deg(Math.atan2((shoT.x - hipT.x) * -dir, hipT.y - shoT.y)), vis(idx.top, [...hips, "lsho", "rsho"]));
     // Lead arm, shoulder turn and hip turn are not scored: from one 2D camera, validation clips of tour players
     // read the same as amateurs (foreshortening and occlusion at the top).
-    // Stance and finish use the address ankles: feet stay planted.
-    const ankL = A[L("ank")], ankR = A[R("ank")];
+    // Stance and finish use the address ankles: feet stay planted. Lead foot = the one on the target side,
+    // from the swing's own direction (so a wrong "Plays" setting can't flip the finish reading).
+    const leadIsL = (A.lank.x - A.rank.x) * dir > 0;
+    const ankL = leadIsL ? A.lank : A.rank, ankR = leadIsL ? A.rank : A.lank;
     const sw = Math.abs(A.lsho.x - A.rsho.x);
     put("stance", Math.abs(ankL.x - ankR.x) / sw, vis(idx.address, ["lank", "rank", "lsho", "rsho"]));
     const span = ankL.x - ankR.x;

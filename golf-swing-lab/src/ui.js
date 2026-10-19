@@ -22,12 +22,18 @@ Engines.listeners.add(({ stage, pct }) => {
   const el = $("#engine"), txt = $("#engineText");
   el.dataset.state = stage === "error" ? "error" : stage === "ready" ? "ready" : "loading";
   txt.textContent = stage === "loading" ? `Loading the swing tracker ${Math.round(pct * 100)}%`
-    : stage === "fast" || stage === "upgrading" ? `Ready · sharpening ${Math.round(pct * 100)}%`
-    : stage === "ready" ? "Tracker ready" : "Tracker failed to load";
+    : stage === "fast" || stage === "upgrading" ? `Ready · HD tracker downloading ${Math.round(Math.max(0, pct - 0.2) / 0.8 * 100)}%`
+    : stage === "ready" ? "Tracker ready" : stage === "lost" ? "Tracker stopped" : "Tracker failed to load";
+  if (stage === "lost") { if (!$("#live").hidden) $("#liveStop").click(); showEngineError(null, "The swing tracker stopped (the phone reclaimed graphics memory)."); }
 });
-Engines.ready.catch((e) => showError("The swing tracker could not start in this browser. Screenshot this and send it over. Details: " + (e?.message || e)));
+Engines.ready.catch((e) => showEngineError(e));
 
 function showError(msg) { const e = $("#errorBox"); e.textContent = msg; e.hidden = false; }
+function showEngineError(e, lead = "The swing tracker didn't finish downloading. This is usually a dropped signal.") {
+  const box = $("#errorBox");
+  box.innerHTML = `${esc(lead)} <button class="btn small primary" type="button" id="engineRetry">Try again</button><br><small>${esc(e?.message || e || "")}</small>`;
+  box.hidden = false; $("#engineRetry").onclick = () => location.reload();
+}
 function hideError() { $("#errorBox").hidden = true; }
 
 /* ---------- settings ---------- */
@@ -42,20 +48,26 @@ for (const id of ["view", "slowmo", "voiceOn"]) {
   el.onchange = () => { settings[id] = el.value; saveSettings(); summariseSettings(); };
 }
 $("#hand").onchange = async () => { const p = currentPlayer(); if (p && canEditPlayer(p.id)) { p.hand = $("#hand").value; await Store.savePlayer(p); } summariseSettings(); };
-$("#heightCm").onchange = async () => { const p = currentPlayer(); const v = +$("#heightCm").value; if (p && canEditPlayer(p.id) && v >= 120 && v <= 220) { p.heightCm = v; await Store.savePlayer(p); } summariseSettings(); };
+$("#heightCm").onchange = async () => {
+  const el = $("#heightCm"), p = currentPlayer(); let v = +el.value;
+  if (v >= 48 && v <= 90) { v = Math.round(v * 2.54); el.value = v; }   // typed inches
+  if (el.value !== "" && !(v >= 120 && v <= 220)) { el.value = p?.heightCm || ""; showError("Height is in cm, e.g. 178 for 5 ft 10."); }
+  else { hideError(); if (p && canEditPlayer(p.id) && v) { p.heightCm = v; await Store.savePlayer(p); } }
+  summariseSettings();
+};
 function heightFor(p) { const v = +$("#heightCm").value; return v >= 120 && v <= 220 ? v : (p?.heightCm || 178); }
 function summariseSettings() {
   const v = { auto: "angle auto", face: "face-on", dtl: "down the line" }[$("#view").value];
   const s = { "0": "", "1": " · normal speed" }[$("#slowmo").value] ?? ` · slo-mo ×${$("#slowmo").value}`;
-  $("#settingsSummary").textContent = `${v} · ${$("#hand").value === "L" ? "left" : "right"}-handed · ${$("#heightCm").value || 178} cm${s}`;
+  $("#settingsSummary").textContent = `${v} · ${$("#hand").value === "L" ? "left" : "right"}-handed · ${heightFor(currentPlayer())} cm${s}`;
 }
 
 /* ---------- voice ---------- */
 function primeVoice() { try { if ("speechSynthesis" in window) { const u = new SpeechSynthesisUtterance(""); speechSynthesis.speak(u); } } catch {} }
-function speak(text) {
+function speak(text, interrupt = true) {
   try {
     if (!("speechSynthesis" in window)) return false;
-    speechSynthesis.cancel();
+    if (interrupt) speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
     const v = speechSynthesis.getVoices().find((x) => /en-GB/i.test(x.lang)) || speechSynthesis.getVoices().find((x) => /^en/i.test(x.lang));
     if (v) u.voice = v;
@@ -86,17 +98,17 @@ function setWork(pct, step, note) {
   $$("#steps li").forEach((li) => { const i = order.indexOf(li.dataset.step), j = order.indexOf(step); li.dataset.state = i < j ? "done" : i === j ? "active" : ""; });
 }
 
-async function analyze(file) {
+async function analyze(file, over = {}) {
   hideError();
-  try { await Engines.ready; } catch { return; }
+  $("#intake").hidden = true; $("#results").hidden = true; $("#working").hidden = false;   // feedback even while the tracker downloads
+  $("#workTitle").textContent = "Reading your swing…"; setWork(0, "find", Engines.fast ? "" : "Loading the swing tracker…");
+  try { await Engines.ready; } catch (e) { $("#working").hidden = true; $("#intake").hidden = false; showEngineError(e); return; }
   const p = currentPlayer();
   const opts = {
-    view: $("#view").value, hand: $("#hand").value, slow: +$("#slowmo").value, club: settings.club,
+    view: $("#view").value, hand: $("#hand").value, slow: over.slow ?? +$("#slowmo").value, club: settings.club,
     heightCm: heightFor(p),
   };
   state.opts = opts; state.file = file;
-  $("#intake").hidden = true; $("#results").hidden = true; $("#working").hidden = false;
-  $("#workTitle").textContent = "Reading your swing…"; setWork(0, "find", "");
   let lastDraw = 0;
   try {
     const result = await analyzeClip(file, opts, {
@@ -110,7 +122,10 @@ async function analyze(file) {
     state.cur = result.swings.reduce((bi, s, i) => (rank(s) > rank(result.swings[bi]) ? i : bi), 0);
     $("#working").hidden = true; $("#results").hidden = false;
     renderResults();
-    await saveSession(result.swings, opts);
+    const ok = await saveSession(result.swings, opts, over.extra);
+    if (ok && over.replace && canEditPlayer(over.replace.pid)) {   // replaces the live record instead of adding a second one
+      try { await Store.deleteSwing(over.replace.pid, over.replace.id); await updateStats(over.replace.pid); renderFixCard(curSwing()); } catch (e) { console.warn("live duplicate", e); }
+    }
     if (settings.voiceOn === "on") speak(spokenSummary(result.swings[state.cur]));
     window.__swingLab.last = exportAnalysis();
   } catch (e) {
@@ -119,9 +134,10 @@ async function analyze(file) {
     showError(e.message || String(e));
   }
 }
+function unlockVideo() { try { if (!video.getAttribute("src")) video.load(); } catch {} }   // load() during a tap lifts WebKit's gesture limits for good (Low Power Mode)
 for (const id of ["fileRec", "filePick"]) {
   const inp = $("#" + id);
-  inp.addEventListener("click", primeVoice);
+  inp.addEventListener("click", primeVoice); inp.addEventListener("click", unlockVideo);
   inp.onchange = () => { if (inp.files[0]) analyze(inp.files[0]); inp.value = ""; };
 }
 const pick = $("#pickBtn");
@@ -493,10 +509,17 @@ async function offerFile(blob, filename) {
     try { await dl.save({ filename, data: blob }); toast("Saved"); return; }
     catch (e) { if (e?.code === "declined") return; }
   }
-  // No save surface here: show it so it can be long-pressed.
-  const url = URL.createObjectURL(blob);
+  // No save surface here: show it, with the share sheet (iPhone: Save Video / Save Image) or a download link.
+  const url = URL.createObjectURL(blob), isVid = blob.type.startsWith("video");
+  if (offerFile.url) URL.revokeObjectURL(offerFile.url); offerFile.url = url;
+  const file = new File([blob], filename, { type: blob.type });
+  const canShare = !window.claude && !!navigator.canShare?.({ files: [file] });
   const out = $("#coachOut"); out.hidden = false;
-  out.innerHTML = blob.type.startsWith("video") ? `<video src="${url}" controls playsinline style="width:100%;border-radius:10px"></video><p class="note">Press and hold the video to save it.</p>` : `<img src="${url}" alt="Swing card" style="width:100%;border-radius:10px"><p class="note">Press and hold the image to save it.</p>`;
+  out.innerHTML = (isVid ? `<video src="${url}" controls playsinline style="width:100%;border-radius:10px"></video>` : `<img src="${url}" alt="Swing card" style="width:100%;border-radius:10px">`)
+    + `<div class="row">${canShare ? `<button class="btn primary" type="button" id="shareFile">${isVid ? "Save or send video" : "Save or send image"}</button>` : `<a class="btn" href="${url}" download="${esc(filename)}">Download</a>`}</div>`
+    + (isVid ? "" : `<p class="note">Or press and hold the image to save it.</p>`);
+  const b = $("#shareFile");
+  if (b) b.onclick = () => navigator.share({ files: [file] }).catch((e) => { if (e?.name !== "AbortError") toast("Could not open sharing here"); });   // share first, no await before it
 }
 function roundRect(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
 async function shareCard() {
@@ -526,7 +549,7 @@ async function shareCard() {
   if (fix) { g.fillStyle = "#ff6b4f"; g.fillText("Working on: " + CHECKS[fix.id].name, 300, 1195); }
   g.fillStyle = "#8fa198"; g.font = "500 24px 'Instrument Sans', sans-serif"; g.fillText("Body tracking from one phone camera · honest scoring", 48, 1290);
   const blob = await new Promise((res) => c.toBlob(res, "image/png"));
-  await offerFile(blob, `swing-${new Date().toISOString().slice(0, 10)}.png`);
+  await offerFile(blob, `swing-${localDay()}.png`);
 }
 async function shareClip() {
   const s = curSwing(), R = state.result;
@@ -561,7 +584,7 @@ async function shareClip() {
     });
     video.pause(); rec.stop(); await done;
     const type = (rec.mimeType || mime || "video/webm").split(";")[0];
-    await offerFile(new Blob(chunks, { type }), `swing-${new Date().toISOString().slice(0, 10)}.${type.includes("mp4") ? "mp4" : "webm"}`);
+    await offerFile(new Blob(chunks, { type }), `swing-${localDay()}.${type.includes("mp4") ? "mp4" : "webm"}`);
   } catch (e) { console.error(e); toast("Could not record the clip"); }
   finally { ui.recording = false; btn.disabled = false; btn.innerHTML = label; video.playbackRate = ui.slow ? 0.3 : 1; }
 }
@@ -576,8 +599,13 @@ const Store = {
   local: lsGet("swinglab:v2", { players: {}, swings: {}, coach: {}, rounds: {} }),
   flush() {
     if (lsSet("swinglab:v2", this.local)) return;
-    const lite = { ...this.local, swings: Object.fromEntries(Object.entries(this.local.swings).map(([k, l]) => [k, l.map(({ thumbs, ...r }) => r)])) };
-    if (!lsSet("swinglab:v2", lite)) throw new Error("Could not save in this browser");
+    // Full: drop the stills of the oldest swings first (in memory too, so it doesn't repeat every save). Scores stay.
+    const pics = Object.values(this.local.swings).flat().filter((s) => s.thumbs && Object.keys(s.thumbs).length).sort((a, b) => a.at - b.at);
+    while (pics.length) {
+      for (const s of pics.splice(0, Math.max(5, Math.ceil(pics.length / 4)))) delete s.thumbs;
+      if (lsSet("swinglab:v2", this.local)) { if (!this.trimmed) { this.trimmed = true; toast("Storage is nearly full, so photos of your oldest swings were removed. Scores are kept.", 6000); } return; }
+    }
+    throw Object.assign(new Error("Could not save in this browser"), { code: "quota_exceeded" });
   },
   async init() {
     try {
@@ -672,7 +700,7 @@ function swingRecord(s, opts, sessionId, extra = {}) {
   return {
     at: Date.now(), session: sessionId, club: opts.club, view: s.view, hand: opts.hand, score: s.total.score, partial: !!s.total.partial,
     quality: s.quality.level, tempo: s.ev.tempo.ok ? { back: +s.ev.tempo.back.toFixed(3), down: +s.ev.tempo.down.toFixed(3) } : null,
-    checks, fix: pickFix(s.checks, s.view)?.id || null, tags: s.tags || [], thumbs: s.thumbs, ...extra,
+    checks, fix: pickFix(s.checks, s.view)?.id || null, tags: s.tags || [], thumbs: s.thumbs?.top ? { top: s.thumbs.top } : {}, ...extra,
   };
 }
 async function saveSession(swings, opts, extra) {
@@ -684,6 +712,13 @@ async function saveSession(swings, opts, extra) {
     for (const s of swings) { s.savedId = await Store.addSwing(pid, swingRecord(s, opts, sessionId, extra)); s.savedPid = pid; }
     await updateStats(pid);
     saved = true;
+    if (Store.mode === "local" && !window.claude?.use) {
+      if (navigator.standalone) try { navigator.storage?.persist?.().catch(() => {}); } catch {}
+      if (navigator.standalone === false && !lsGet("swinglab:a2hsTip", false)) {
+        lsSet("swinglab:a2hsTip", true);
+        setTimeout(() => toast("Tip: Safari clears saved swings if you skip a week. Share › Add to Home Screen keeps them. Already have swings? Progress › Export first, then Import in the Home Screen app.", 9000), 3200);
+      }
+    }
     toast(`Saved ${swings.length} swing${swings.length > 1 ? "s" : ""} to ${players.find((x) => x.id === pid)?.id === Store.me ? "your" : (players.find((x) => x.id === pid)?.name || "their") + "’s"} progress`);
   } catch (e) {
     console.error(e);
@@ -757,9 +792,13 @@ function lineChart(points, { target = null, yMin, yMax, invert = false, fmt = (v
   const last = points[n - 1];
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img">${g}${line}${dots}<text x="${x(n - 1)}" y="${y(last.v) - 12}" text-anchor="middle" style="fill:var(--ink);font-weight:500">${esc(fmt(last.v))}</text>${labels}</svg>`;
 }
+const localDay = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 function sessions(list) {
   const map = new Map();
-  for (const s of [...list].reverse()) { if (!map.has(s.session)) map.set(s.session, { id: s.session, at: s.at, swings: [] }); map.get(s.session).swings.push(s); }
+  for (const s of [...list].reverse()) {   // live-coach swings are saved one by one: group them by day
+    const key = s.live ? "live-" + new Date(s.at).toDateString() : s.session;
+    if (!map.has(key)) map.set(key, { id: key, at: s.at, swings: [] }); map.get(key).swings.push(s);
+  }
   return [...map.values()].map((g) => {
     const sc = g.swings.map((s) => s.score).filter(Number.isFinite);
     const med = median(sc), sd = sc.length > 1 ? Math.sqrt(mean(sc.map((v) => (v - mean(sc)) ** 2))) : 0;
@@ -771,9 +810,13 @@ async function renderProgress() {
   const p = currentPlayer();
   const mine = canEditPlayer(currentPid);
   $("#goalTitle").textContent = (p?.id === Store.me ? "Your" : (p?.name || "Golfer") + "’s") + " road to 90";
-  $("#storeNote").textContent = Store.mode === "db" ? "Synced to this lab" : "Saved in this browser only";
+  const safariTab = !window.claude?.use && navigator.standalone === false;   // iPhone/iPad Safari tab, not the Home Screen app
+  $("#storeNote").textContent = Store.mode === "db" ? "Synced to this lab" : safariTab
+    ? "Saved in Safari on this phone. Safari deletes it if you don't open Swing Lab for about a week: Export to keep a copy, or add Swing Lab to your Home Screen."
+    : "Saved on this device only";
+  if (safariTab && historyCache.length >= 10 && Date.now() - (settings.lastExport || 0) > 6048e5) $("#storeNote").textContent += " Back up now: Export swings below.";
   $("#roundFormWrap").hidden = !mine;
-  $("#rDate").value ||= new Date().toISOString().slice(0, 10);
+  $("#rDate").value ||= localDay();
   // rounds
   const rounds = roundsCache;
   if (rounds.length) {
@@ -850,7 +893,7 @@ $("#roundForm").onsubmit = async (e) => {
   };
   if (!r.course || !(r.score > 0)) return;
   await Store.addRound(currentPid, r); await updateStats(currentPid);
-  $("#rScore").value = ""; $("#roundFormWrap").open = false;
+  $("#rScore").value = ""; $("#rDate").value = localDay(); $("#roundFormWrap").open = false;
   toast(r.holes === 18 && r.score < 90 ? "Under 90. Massive." : "Round saved");
   renderProgress();
 };
@@ -867,7 +910,8 @@ async function renderCrew() {
       <span class="c">${esc(p.stats?.form ?? "–")}</span><span class="c">${esc(p.stats?.best ?? "–")}</span><span class="c hide-s">${esc(p.stats?.bestRound ?? "–")}</span></div>`).join("");
   $("#meName").value = players.find((p) => p.id === Store.me)?.name || "";
   $("#addGuestPanel").hidden = !Store.owner;
-  $("#crewNote").textContent = Store.mode === "db" ? "Share this lab with your crew (as Contributor or Editor) and they post their own swings here." : "Running locally: the board lives in this browser.";
+  $("#crewNote").textContent = Store.mode === "db" ? "Share this lab with your crew (as Contributor or Editor) and they post their own swings here." : "This board lives on this phone only. Add a mate above, pick them as Golfer, then analyse their clip or Import the file they Export.";
+  $("#v-crew h2").textContent = Store.mode === "db" ? "Crew leaderboard" : "Golfers on this phone";
 }
 $("#guestForm").onsubmit = async (e) => {
   e.preventDefault();
@@ -962,11 +1006,12 @@ $("#chatForm").onsubmit = async (e) => {
 };
 
 /* Lesson mode: scan a long video, tick your swings, compare the start of the session with the end. */
+$("#lessonFile").addEventListener("click", unlockVideo);
 $("#lessonFile").onchange = async () => {
   const file = $("#lessonFile").files[0]; $("#lessonFile").value = "";
   if (!file) return;
   const out = $("#lessonOut");
-  try { await Engines.ready; } catch { return; }
+  try { await Engines.ready; } catch (e) { showEngineError(e); return; }
   const opts = { view: $("#view").value, hand: $("#hand").value, slow: +$("#slowmo").value, club: settings.club, heightCm: heightFor(currentPlayer()), coarseStep: 0.3 };
   // Lesson mode uses the same video player, so clear any swing results on the Swing tab.
   state.result = null; video.pause(); $("#results").hidden = true; $("#intake").hidden = false;

@@ -38,6 +38,7 @@
 body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15.5px; line-height: 1.5; }
 body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--surface); }
 button, input, select, textarea { font: inherit; color: inherit; }
+input, select, textarea { font-size: max(16px, 1em); }   /* under 16px, iOS zooms in on focus */
 button { cursor: pointer; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; line-height: 1.12; }
@@ -192,10 +193,15 @@ details > summary::-webkit-details-marker { display: none; }
 .err { border: 1px solid var(--work); color: var(--work); border-radius: 10px; padding: 12px 14px; background: color-mix(in srgb, var(--work) 7%, var(--surface)); }
 
 /* live coach */
-.live-stage { position: relative; background: #000; border-radius: var(--r); overflow: hidden; aspect-ratio: 9 / 16; max-height: 70vh; width: min(100%, calc(70vh * 9 / 16)); justify-self: center; }
+.live-stage { container-type: inline-size; position: relative; background: #000; border-radius: var(--r); overflow: hidden; aspect-ratio: 9 / 16; max-height: 70vh; width: min(100%, calc(70vh * 9 / 16)); justify-self: center; }
 .live-stage.landscape { aspect-ratio: 16 / 9; width: 100%; }
 .live-stage video, .live-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .live-status { position: absolute; left: 10px; right: 10px; top: 10px; background: rgba(0,0,0,.66); color: #fff; font-family: var(--font-display); font-weight: 750; font-size: 18px; text-align: center; padding: 10px 12px; border-radius: 10px; }
+.live-status { font-size: clamp(18px, 6cqw, 30px); }
+.live-big { position: absolute; left: 6%; right: 6%; bottom: 7%; display: grid; justify-items: center; gap: .15em; padding: .35em .5em; border-radius: 16px; background: rgba(0,0,0,.72); color: #fff; text-align: center; font-family: var(--font-display); font-weight: 850; line-height: 1.05; }
+.live-big[hidden] { display: none; }
+.live-big b { font-size: clamp(56px, 30cqw, 160px); }
+.live-big span { font-size: clamp(20px, 8cqw, 44px); }
 .live-status[data-state="ready"] { background: rgba(31,122,70,.85); }
 .live-status[data-state="swing"] { background: rgba(217,67,42,.85); }
 .live-result { border: 1.5px solid var(--line); border-radius: var(--r); padding: 14px; display: grid; gap: 6px; }

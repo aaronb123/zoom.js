@@ -46,9 +46,9 @@ function angleAt(a, b, c) {
 }
 function lsGet(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } }
 function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } }
-function toast(msg) {
+function toast(msg, ms = 2800) {
   const t = document.createElement("div"); t.className = "toast"; t.setAttribute("role", "status"); t.textContent = msg; document.body.appendChild(t);
-  setTimeout(() => t.remove(), 2800);
+  setTimeout(() => t.remove(), ms);
 }
 function loadScript(src) {
   return new Promise((res, rej) => {
@@ -74,8 +74,32 @@ function decodeB64(txt) {
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
 }
+const SITE = window.SWING_SITE || null;   // set only by the web build's <head>; the artifact never has it
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const whenVisible = () => document.visibilityState === "visible" ? Promise.resolve() : new Promise((r) => {
+  const f = () => { if (document.visibilityState === "visible") { document.removeEventListener("visibilitychange", f); r(); } };
+  document.addEventListener("visibilitychange", f);
+});
+async function modelCache() { try { return SITE?.modelCache && window.caches ? await caches.open(SITE.modelCache) : null; } catch { return null; } }
+/* Model file: page-side cache first (web only), then the network, retried on dropped connections (web only).
+   A non-OK reply (the artifact host serves no .bin) goes straight to the caller's fallback. */
+async function fetchModel(url, onBytes, asText) {
+  const c = await modelCache();
+  try { const hit = c && await c.match(url); if (hit) return await readWithProgress(hit, onBytes, asText); } catch {}
+  let err = null;
+  for (let a = 0; a < (window.claude?.use ? 1 : 3); a++) {
+    if (a) { await whenVisible(); await sleep(1500 * 2 ** (a - 1)); }
+    let r;
+    try { r = await fetch(url, a ? { cache: "reload" } : undefined); } catch (e) { err = e; continue; }
+    if (!r.ok) { err = Object.assign(new Error("Missing " + url), { status: r.status }); break; }
+    try { const b = await readWithProgress(r, onBytes, asText); c?.put(url, new Response(b)).catch(() => {}); return b; }
+    catch (e) { err = e; }
+  }
+  throw err;
+}
 async function fetchBinary(url, onBytes) {
-  try { const r = await fetch(url); if (r.ok) return await readWithProgress(r, onBytes, false); } catch {}
+  let direct;
+  try { return await fetchModel(url, onBytes, false); } catch (e) { direct = e; }
   const parts = []; let done = 0;
   for (let i = 0; ; i++) {
     const r = await fetch(`${url}.b64.${i}.txt`).catch(() => null);
@@ -83,7 +107,7 @@ async function fetchBinary(url, onBytes) {
     const txt = await readWithProgress(r, onBytes && ((b) => onBytes((done + b) * 0.75)), true);
     done += txt.length; parts.push(decodeB64(txt));
   }
-  if (!parts.length) throw new Error("Missing " + url);
+  if (!parts.length) throw direct || new Error("Missing " + url);
   const n = parts.reduce((s, p) => s + p.length, 0), all = new Uint8Array(n); let o = 0;
   for (const p of parts) { all.set(p, o); o += p.length; }
   return all;
@@ -94,27 +118,31 @@ async function fetchBinary(url, onBytes) {
    unless a global regeneratorRuntime already exists. A failed load leaves a half-built global behind,
    so clear it before retrying the next source. */
 let libsReady = null;
+// The web version ships its own copies: try them first so a stalled CDN never blocks it. The artifact has none.
+const localFirst = (a) => SITE ? [...a.filter((s) => s.startsWith("./")), ...a.filter((s) => !s.startsWith("./"))] : a;
 function loadLibs() {
   libsReady ||= (async () => {
     if (!("regeneratorRuntime" in window)) window.regeneratorRuntime = undefined;
     if (!window.tf?.loadGraphModel) {
-      for (const src of CONFIG.tf) { delete window.tf; try { await loadScript(src); if (window.tf?.loadGraphModel) break; } catch {} }
+      for (const src of localFirst(CONFIG.tf)) { delete window.tf; try { await loadScript(src); if (window.tf?.loadGraphModel) break; } catch {} }
     }
     if (!window.tf?.loadGraphModel) throw new Error("TensorFlow.js did not load");
     if (!window.poseDetection?.createDetector) {
-      for (const src of CONFIG.poseDetection) { delete window.poseDetection; try { await loadScript(src); if (window.poseDetection?.createDetector) break; } catch {} }
+      for (const src of localFirst(CONFIG.poseDetection)) { delete window.poseDetection; try { await loadScript(src); if (window.poseDetection?.createDetector) break; } catch {} }
     }
     if (!window.poseDetection?.createDetector) throw new Error("Pose library did not load");
     const tf = window.tf;
     if (!(await tf.setBackend("webgl"))) await tf.setBackend("cpu");
     await tf.ready();
+    // iOS can reclaim the GPU: TF.js restores the context but its textures are gone, so latch the loss.
+    if (tf.getBackend() === "webgl") tf.backend().canvas?.addEventListener?.("webglcontextlost", () => { if (!Engines.lost) { Engines.lost = true; Engines.set("lost", 0); } });
     return tf;
   })();
   return libsReady;
 }
 
 async function modelHandler(tf, name, onBytes) {
-  const json = await (await fetch(CONFIG.models + name + ".json")).json();
+  const json = JSON.parse(await fetchModel(CONFIG.models + name + ".json", null, true));
   const weights = await fetchBinary(CONFIG.models + name + ".bin", onBytes);
   return tf.io.fromMemory({
     modelTopology: json.modelTopology, weightSpecs: json.weightsManifest.flatMap((g) => g.weights), weightData: weights.buffer,
@@ -162,7 +190,7 @@ const Engines = {
 Engines.ready = (async () => {
   const onlyFull = new URLSearchParams(location.search).get("model") === "full";
   try {
-    Engines.fast = await createBlazePose("full", (f) => Engines.set("loading", f * (onlyFull ? 1 : 0.2)));
+    Engines.fast = await createBlazePose("full", (f) => !Engines.error && Engines.set("loading", f * (onlyFull ? 1 : 0.2)));
     Engines.set("fast", onlyFull ? 1 : 0.2);
   } catch (e) { Engines.error = e; Engines.set("error", 0); console.warn("pose engine failed", e); throw e; }
   Engines.accurateReady = onlyFull ? Promise.resolve(Engines.fast) : createBlazePose("heavy", (f) => Engines.set("upgrading", 0.2 + 0.8 * f))
@@ -187,9 +215,12 @@ function waitEvent(el, name, ms = 4000) {
   });
 }
 async function loadVideo(file) {
+  const prev = video.getAttribute("src") || "";
   video.removeAttribute("src"); video.load();
+  if (prev.startsWith("blob:")) URL.revokeObjectURL(prev);
   video.src = URL.createObjectURL(file);
   const loaded = waitEvent(video, "loadeddata", 15000);
+  video.load();   // WebKit prepares the player on load() even when play() is refused (Low Power Mode, hot phone)
   // iOS only decodes frames once playback has started; a muted inline play/pause wakes it up.
   try { await video.play(); video.pause(); } catch {}
   await loaded;
@@ -579,7 +610,7 @@ function findEvents(series, slow, lead, slowAuto = false) {
    often fails) it pins impact to about a millisecond. Only used if a clear onset sits near the pose impact. */
 async function decodeOnsets(file) {
   try {
-    if (file.size > 400e6) return null;
+    if (file.size > 100e6) return null;
     const AC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
     if (!AC) return null;
     const ctx = new AC(1, 16000, 16000);
@@ -609,7 +640,7 @@ function audioImpact(onsets, tPose) {
 /* ---------- tracking quality ----------
    Every swing gets an honest confidence rating with the specific reason, so a bad clip never
    produces a confident-looking score. */
-function assessQuality(series, ev, W, Hpx, viewInfo, fps, stride = 1) {
+function assessQuality(series, ev, W, Hpx, viewInfo, fps, stride = 1, live = false) {
   const issues = [];
   const core = ["lsho", "rsho", "lhip", "rhip"];
   const i0 = ev.idx.address, i1 = ev.idx.finish;
@@ -625,7 +656,7 @@ function assessQuality(series, ev, W, Hpx, viewInfo, fps, stride = 1) {
   const out = seg.some((f) => ["nose", "lank", "rank", "lwri", "rwri"].some((k) => { const p = f.kp[k]; return p.x < margin * W || p.x > (1 - margin) * W || p.y < margin * Hpx || p.y > (1 - margin) * Hpx; }));
   if (out) issues.push({ key: "edge", text: "Part of you leaves the frame (often the hands at the top). Step back so your whole swing fits." });
   const realFps = fps * (ev.slow || 1);
-  if (realFps < 50 && !ev.audioImpact && ev.downFrames < 9 * stride) issues.push({ key: "fps", text: `This clip is about ${Math.round(fps)} fps, so the downswing is only ${Math.round(ev.downFrames * stride)} frames and rhythm is rough. Film at 60 fps or in slo-mo.` });
+  if (!live && realFps < 50 && !ev.audioImpact && ev.downFrames < 9 * stride) issues.push({ key: "fps", text: `This clip is about ${Math.round(fps)} fps, so the downswing is only ${Math.round(ev.downFrames * stride)} frames and rhythm is rough. Film at 60 fps or in slo-mo.` });
   if (viewInfo.unclear) issues.push({ key: "angle", text: "The camera is at an in-between angle. Film straight face-on or straight down the line for reliable numbers." });
   // Planted feet should not move between setup and impact; if they do, the camera moved.
   // A moving camera shifts every planted point together, while one hidden foot point just jitters. So take the
@@ -687,7 +718,7 @@ async function analyzeClip(file, opts, hooks = {}) {
   const dur = video.duration, W = work.width, Hpx = work.height;
   say(1, "find", "Checking the video");
   const fps = await estimateFps();
-  const onsetsP = opts.slow <= 1 ? decodeOnsets(file) : Promise.resolve(null);
+  const onsetsP = opts.slow <= 1 && dur <= 90 ? decodeOnsets(file) : Promise.resolve(null);
   const fast = await Engines.ready;
   const step1 = opts.coarseStep || Math.max(0.12 * Math.min(opts.slow || 1, 2), dur / 480);
   const coarse = [];
@@ -705,7 +736,10 @@ async function analyzeClip(file, opts, hooks = {}) {
   const wins = findWindows(coarse, dur, opts.slow);
   if (!wins.length) throw new Error("No swing found. Make sure your whole body is in frame and your hands go above your shoulders at the top.");
   say(30, "track", "Loading the accurate tracker");
-  const acc = await Engines.accurateReady;
+  const totalMB = Math.round(CONFIG.modelMB.detector + CONFIG.modelMB.heavy);
+  const onEng = ({ stage, pct }) => { if (stage === "upgrading") say(30, "track", `First-time download of the accurate tracker: ${Math.round(Math.max(0, (pct - 0.2) / 0.8) * totalMB)} of ${totalMB} MB. Wi-Fi is faster.`); };
+  Engines.listeners.add(onEng);
+  let acc; try { acc = await Engines.accurateReady; } finally { Engines.listeners.delete(onEng); }
   const swings = [];
   const total = wins.reduce((s, w) => s + (w[1] - w[0]), 0);
   let doneT = 0;

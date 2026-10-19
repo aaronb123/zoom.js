@@ -44,6 +44,7 @@
 body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15.5px; line-height: 1.5; }
 body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--surface); }
 button, input, select, textarea { font: inherit; color: inherit; }
+input, select, textarea { font-size: max(16px, 1em); }   /* under 16px, iOS zooms in on focus */
 button { cursor: pointer; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; line-height: 1.12; }
@@ -198,10 +199,15 @@ details > summary::-webkit-details-marker { display: none; }
 .err { border: 1px solid var(--work); color: var(--work); border-radius: 10px; padding: 12px 14px; background: color-mix(in srgb, var(--work) 7%, var(--surface)); }
 
 /* live coach */
-.live-stage { position: relative; background: #000; border-radius: var(--r); overflow: hidden; aspect-ratio: 9 / 16; max-height: 70vh; width: min(100%, calc(70vh * 9 / 16)); justify-self: center; }
+.live-stage { container-type: inline-size; position: relative; background: #000; border-radius: var(--r); overflow: hidden; aspect-ratio: 9 / 16; max-height: 70vh; width: min(100%, calc(70vh * 9 / 16)); justify-self: center; }
 .live-stage.landscape { aspect-ratio: 16 / 9; width: 100%; }
 .live-stage video, .live-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .live-status { position: absolute; left: 10px; right: 10px; top: 10px; background: rgba(0,0,0,.66); color: #fff; font-family: var(--font-display); font-weight: 750; font-size: 18px; text-align: center; padding: 10px 12px; border-radius: 10px; }
+.live-status { font-size: clamp(18px, 6cqw, 30px); }
+.live-big { position: absolute; left: 6%; right: 6%; bottom: 7%; display: grid; justify-items: center; gap: .15em; padding: .35em .5em; border-radius: 16px; background: rgba(0,0,0,.72); color: #fff; text-align: center; font-family: var(--font-display); font-weight: 850; line-height: 1.05; }
+.live-big[hidden] { display: none; }
+.live-big b { font-size: clamp(56px, 30cqw, 160px); }
+.live-big span { font-size: clamp(20px, 8cqw, 44px); }
 .live-status[data-state="ready"] { background: rgba(31,122,70,.85); }
 .live-status[data-state="swing"] { background: rgba(217,67,42,.85); }
 .live-result { border: 1.5px solid var(--line); border-radius: var(--r); padding: 14px; display: grid; gap: 6px; }
@@ -397,7 +403,7 @@ textarea { min-height: 120px; resize: vertical; line-height: 1.5; }
         </div>
         <ul>
           <li>Whole body and club in shot, about 3–4 m away, phone at hip height.</li>
-          <li>Normal video at 60 fps is best (iPhone: Settings › Camera › Record Video › 1080p at 60). Skip the Slo-mo mode: it speeds up and slows down, which throws off the timing.</li>
+          <li>Normal video at 60 fps is best: on iPhone set Settings › Camera › Record Video › 1080p at 60, film with the Camera app, then tap Choose a video. (Record a swing uses a quick 30 fps camera, so timing readings are approximate.) Skip the Slo-mo mode: it speeds up and slows down, which throws off the timing.</li>
           <li>Only you in the frame. At Topgolf, film from the side of your bay.</li>
           <li>Hold your finish for a couple of seconds.</li>
         </ul>
@@ -405,12 +411,14 @@ textarea { min-height: 120px; resize: vertical; line-height: 1.5; }
     </div>
 
     <div class="panel live" id="live" hidden>
-      <div class="row spread"><h2>Live coach</h2><button class="btn small" id="liveStop">Stop</button></div>
+      <div class="row spread"><h2>Live coach</h2><span class="row"><button class="btn small primary" id="liveResume" type="button" hidden>Resume</button><button class="btn small" id="liveStop" type="button">Stop</button></span></div>
       <div class="live-stage" id="liveStage">
         <video id="liveVideo" playsinline muted autoplay></video>
         <canvas id="liveOverlay"></canvas>
         <div class="live-status" id="liveStatus" role="status" aria-live="polite">Starting the camera…</div>
+        <div class="live-big" id="liveBig" hidden><b id="liveBigScore"></b><span id="liveBigCue"></span></div>
       </div>
+      <p class="note" id="liveSoundHint">No voice? Turn off Silent mode (side switch, or the bell in Control Centre) and turn the volume up. The score also shows big on screen.</p>
       <div class="stack" style="gap: 6px;">
         <span class="label">Coach me on</span>
         <div class="chips" id="liveFocus" role="group" aria-label="Focus"></div>
@@ -422,7 +430,7 @@ textarea { min-height: 120px; resize: vertical; line-height: 1.5; }
       </div>
       <div class="live-result" id="liveResult" hidden></div>
       <div class="history" id="liveList"></div>
-      <p class="note">Prop the phone at hip height, 3–4 m away, whole body in shot. Settle at address and it says “ready”, then just swing. It talks after every swing. Each swing is recorded so you can run the full, most accurate analysis on it.</p>
+      <p class="note">Prop the phone at hip height, 3–4 m away, whole body in shot. Settle at address and it says “ready”, then just swing. It talks after every swing. Each swing is recorded so you can run the full, most accurate analysis on it. Only you in shot: start it, then walk in, and keep friends and the next bay out of frame.</p>
     </div>
 
     <div class="panel working" id="working" hidden>
@@ -697,9 +705,9 @@ function angleAt(a, b, c) {
 }
 function lsGet(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } }
 function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } }
-function toast(msg) {
+function toast(msg, ms = 2800) {
   const t = document.createElement("div"); t.className = "toast"; t.setAttribute("role", "status"); t.textContent = msg; document.body.appendChild(t);
-  setTimeout(() => t.remove(), 2800);
+  setTimeout(() => t.remove(), ms);
 }
 function loadScript(src) {
   return new Promise((res, rej) => {
@@ -725,8 +733,32 @@ function decodeB64(txt) {
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
 }
+const SITE = window.SWING_SITE || null;   // set only by the web build's <head>; the artifact never has it
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const whenVisible = () => document.visibilityState === "visible" ? Promise.resolve() : new Promise((r) => {
+  const f = () => { if (document.visibilityState === "visible") { document.removeEventListener("visibilitychange", f); r(); } };
+  document.addEventListener("visibilitychange", f);
+});
+async function modelCache() { try { return SITE?.modelCache && window.caches ? await caches.open(SITE.modelCache) : null; } catch { return null; } }
+/* Model file: page-side cache first (web only), then the network, retried on dropped connections (web only).
+   A non-OK reply (the artifact host serves no .bin) goes straight to the caller's fallback. */
+async function fetchModel(url, onBytes, asText) {
+  const c = await modelCache();
+  try { const hit = c && await c.match(url); if (hit) return await readWithProgress(hit, onBytes, asText); } catch {}
+  let err = null;
+  for (let a = 0; a < (window.claude?.use ? 1 : 3); a++) {
+    if (a) { await whenVisible(); await sleep(1500 * 2 ** (a - 1)); }
+    let r;
+    try { r = await fetch(url, a ? { cache: "reload" } : undefined); } catch (e) { err = e; continue; }
+    if (!r.ok) { err = Object.assign(new Error("Missing " + url), { status: r.status }); break; }
+    try { const b = await readWithProgress(r, onBytes, asText); c?.put(url, new Response(b)).catch(() => {}); return b; }
+    catch (e) { err = e; }
+  }
+  throw err;
+}
 async function fetchBinary(url, onBytes) {
-  try { const r = await fetch(url); if (r.ok) return await readWithProgress(r, onBytes, false); } catch {}
+  let direct;
+  try { return await fetchModel(url, onBytes, false); } catch (e) { direct = e; }
   const parts = []; let done = 0;
   for (let i = 0; ; i++) {
     const r = await fetch(`${url}.b64.${i}.txt`).catch(() => null);
@@ -734,7 +766,7 @@ async function fetchBinary(url, onBytes) {
     const txt = await readWithProgress(r, onBytes && ((b) => onBytes((done + b) * 0.75)), true);
     done += txt.length; parts.push(decodeB64(txt));
   }
-  if (!parts.length) throw new Error("Missing " + url);
+  if (!parts.length) throw direct || new Error("Missing " + url);
   const n = parts.reduce((s, p) => s + p.length, 0), all = new Uint8Array(n); let o = 0;
   for (const p of parts) { all.set(p, o); o += p.length; }
   return all;
@@ -745,27 +777,31 @@ async function fetchBinary(url, onBytes) {
    unless a global regeneratorRuntime already exists. A failed load leaves a half-built global behind,
    so clear it before retrying the next source. */
 let libsReady = null;
+// The web version ships its own copies: try them first so a stalled CDN never blocks it. The artifact has none.
+const localFirst = (a) => SITE ? [...a.filter((s) => s.startsWith("./")), ...a.filter((s) => !s.startsWith("./"))] : a;
 function loadLibs() {
   libsReady ||= (async () => {
     if (!("regeneratorRuntime" in window)) window.regeneratorRuntime = undefined;
     if (!window.tf?.loadGraphModel) {
-      for (const src of CONFIG.tf) { delete window.tf; try { await loadScript(src); if (window.tf?.loadGraphModel) break; } catch {} }
+      for (const src of localFirst(CONFIG.tf)) { delete window.tf; try { await loadScript(src); if (window.tf?.loadGraphModel) break; } catch {} }
     }
     if (!window.tf?.loadGraphModel) throw new Error("TensorFlow.js did not load");
     if (!window.poseDetection?.createDetector) {
-      for (const src of CONFIG.poseDetection) { delete window.poseDetection; try { await loadScript(src); if (window.poseDetection?.createDetector) break; } catch {} }
+      for (const src of localFirst(CONFIG.poseDetection)) { delete window.poseDetection; try { await loadScript(src); if (window.poseDetection?.createDetector) break; } catch {} }
     }
     if (!window.poseDetection?.createDetector) throw new Error("Pose library did not load");
     const tf = window.tf;
     if (!(await tf.setBackend("webgl"))) await tf.setBackend("cpu");
     await tf.ready();
+    // iOS can reclaim the GPU: TF.js restores the context but its textures are gone, so latch the loss.
+    if (tf.getBackend() === "webgl") tf.backend().canvas?.addEventListener?.("webglcontextlost", () => { if (!Engines.lost) { Engines.lost = true; Engines.set("lost", 0); } });
     return tf;
   })();
   return libsReady;
 }
 
 async function modelHandler(tf, name, onBytes) {
-  const json = await (await fetch(CONFIG.models + name + ".json")).json();
+  const json = JSON.parse(await fetchModel(CONFIG.models + name + ".json", null, true));
   const weights = await fetchBinary(CONFIG.models + name + ".bin", onBytes);
   return tf.io.fromMemory({
     modelTopology: json.modelTopology, weightSpecs: json.weightsManifest.flatMap((g) => g.weights), weightData: weights.buffer,
@@ -813,7 +849,7 @@ const Engines = {
 Engines.ready = (async () => {
   const onlyFull = new URLSearchParams(location.search).get("model") === "full";
   try {
-    Engines.fast = await createBlazePose("full", (f) => Engines.set("loading", f * (onlyFull ? 1 : 0.2)));
+    Engines.fast = await createBlazePose("full", (f) => !Engines.error && Engines.set("loading", f * (onlyFull ? 1 : 0.2)));
     Engines.set("fast", onlyFull ? 1 : 0.2);
   } catch (e) { Engines.error = e; Engines.set("error", 0); console.warn("pose engine failed", e); throw e; }
   Engines.accurateReady = onlyFull ? Promise.resolve(Engines.fast) : createBlazePose("heavy", (f) => Engines.set("upgrading", 0.2 + 0.8 * f))
@@ -838,9 +874,12 @@ function waitEvent(el, name, ms = 4000) {
   });
 }
 async function loadVideo(file) {
+  const prev = video.getAttribute("src") || "";
   video.removeAttribute("src"); video.load();
+  if (prev.startsWith("blob:")) URL.revokeObjectURL(prev);
   video.src = URL.createObjectURL(file);
   const loaded = waitEvent(video, "loadeddata", 15000);
+  video.load();   // WebKit prepares the player on load() even when play() is refused (Low Power Mode, hot phone)
   // iOS only decodes frames once playback has started; a muted inline play/pause wakes it up.
   try { await video.play(); video.pause(); } catch {}
   await loaded;
@@ -1230,7 +1269,7 @@ function findEvents(series, slow, lead, slowAuto = false) {
    often fails) it pins impact to about a millisecond. Only used if a clear onset sits near the pose impact. */
 async function decodeOnsets(file) {
   try {
-    if (file.size > 400e6) return null;
+    if (file.size > 100e6) return null;
     const AC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
     if (!AC) return null;
     const ctx = new AC(1, 16000, 16000);
@@ -1260,7 +1299,7 @@ function audioImpact(onsets, tPose) {
 /* ---------- tracking quality ----------
    Every swing gets an honest confidence rating with the specific reason, so a bad clip never
    produces a confident-looking score. */
-function assessQuality(series, ev, W, Hpx, viewInfo, fps, stride = 1) {
+function assessQuality(series, ev, W, Hpx, viewInfo, fps, stride = 1, live = false) {
   const issues = [];
   const core = ["lsho", "rsho", "lhip", "rhip"];
   const i0 = ev.idx.address, i1 = ev.idx.finish;
@@ -1276,7 +1315,7 @@ function assessQuality(series, ev, W, Hpx, viewInfo, fps, stride = 1) {
   const out = seg.some((f) => ["nose", "lank", "rank", "lwri", "rwri"].some((k) => { const p = f.kp[k]; return p.x < margin * W || p.x > (1 - margin) * W || p.y < margin * Hpx || p.y > (1 - margin) * Hpx; }));
   if (out) issues.push({ key: "edge", text: "Part of you leaves the frame (often the hands at the top). Step back so your whole swing fits." });
   const realFps = fps * (ev.slow || 1);
-  if (realFps < 50 && !ev.audioImpact && ev.downFrames < 9 * stride) issues.push({ key: "fps", text: `This clip is about ${Math.round(fps)} fps, so the downswing is only ${Math.round(ev.downFrames * stride)} frames and rhythm is rough. Film at 60 fps or in slo-mo.` });
+  if (!live && realFps < 50 && !ev.audioImpact && ev.downFrames < 9 * stride) issues.push({ key: "fps", text: `This clip is about ${Math.round(fps)} fps, so the downswing is only ${Math.round(ev.downFrames * stride)} frames and rhythm is rough. Film at 60 fps or in slo-mo.` });
   if (viewInfo.unclear) issues.push({ key: "angle", text: "The camera is at an in-between angle. Film straight face-on or straight down the line for reliable numbers." });
   // Planted feet should not move between setup and impact; if they do, the camera moved.
   // A moving camera shifts every planted point together, while one hidden foot point just jitters. So take the
@@ -1338,7 +1377,7 @@ async function analyzeClip(file, opts, hooks = {}) {
   const dur = video.duration, W = work.width, Hpx = work.height;
   say(1, "find", "Checking the video");
   const fps = await estimateFps();
-  const onsetsP = opts.slow <= 1 ? decodeOnsets(file) : Promise.resolve(null);
+  const onsetsP = opts.slow <= 1 && dur <= 90 ? decodeOnsets(file) : Promise.resolve(null);
   const fast = await Engines.ready;
   const step1 = opts.coarseStep || Math.max(0.12 * Math.min(opts.slow || 1, 2), dur / 480);
   const coarse = [];
@@ -1356,7 +1395,10 @@ async function analyzeClip(file, opts, hooks = {}) {
   const wins = findWindows(coarse, dur, opts.slow);
   if (!wins.length) throw new Error("No swing found. Make sure your whole body is in frame and your hands go above your shoulders at the top.");
   say(30, "track", "Loading the accurate tracker");
-  const acc = await Engines.accurateReady;
+  const totalMB = Math.round(CONFIG.modelMB.detector + CONFIG.modelMB.heavy);
+  const onEng = ({ stage, pct }) => { if (stage === "upgrading") say(30, "track", `First-time download of the accurate tracker: ${Math.round(Math.max(0, (pct - 0.2) / 0.8) * totalMB)} of ${totalMB} MB. Wi-Fi is faster.`); };
+  Engines.listeners.add(onEng);
+  let acc; try { acc = await Engines.accurateReady; } finally { Engines.listeners.delete(onEng); }
   const swings = [];
   const total = wins.reduce((s, w) => s + (w[1] - w[0]), 0);
   let doneT = 0;
@@ -1757,8 +1799,10 @@ function computeChecks(series, ev, opts, viewInfo) {
     put("spineTop", deg(Math.atan2((shoT.x - hipT.x) * -dir, hipT.y - shoT.y)), vis(idx.top, [...hips, "lsho", "rsho"]));
     // Lead arm, shoulder turn and hip turn are not scored: from one 2D camera, validation clips of tour players
     // read the same as amateurs (foreshortening and occlusion at the top).
-    // Stance and finish use the address ankles: feet stay planted.
-    const ankL = A[L("ank")], ankR = A[R("ank")];
+    // Stance and finish use the address ankles: feet stay planted. Lead foot = the one on the target side,
+    // from the swing's own direction (so a wrong "Plays" setting can't flip the finish reading).
+    const leadIsL = (A.lank.x - A.rank.x) * dir > 0;
+    const ankL = leadIsL ? A.lank : A.rank, ankR = leadIsL ? A.rank : A.lank;
     const sw = Math.abs(A.lsho.x - A.rsho.x);
     put("stance", Math.abs(ankL.x - ankR.x) / sw, vis(idx.address, ["lank", "rank", "lsho", "rsho"]));
     const span = ankL.x - ankR.x;
@@ -1912,12 +1956,18 @@ Engines.listeners.add(({ stage, pct }) => {
   const el = $("#engine"), txt = $("#engineText");
   el.dataset.state = stage === "error" ? "error" : stage === "ready" ? "ready" : "loading";
   txt.textContent = stage === "loading" ? `Loading the swing tracker ${Math.round(pct * 100)}%`
-    : stage === "fast" || stage === "upgrading" ? `Ready · sharpening ${Math.round(pct * 100)}%`
-    : stage === "ready" ? "Tracker ready" : "Tracker failed to load";
+    : stage === "fast" || stage === "upgrading" ? `Ready · HD tracker downloading ${Math.round(Math.max(0, pct - 0.2) / 0.8 * 100)}%`
+    : stage === "ready" ? "Tracker ready" : stage === "lost" ? "Tracker stopped" : "Tracker failed to load";
+  if (stage === "lost") { if (!$("#live").hidden) $("#liveStop").click(); showEngineError(null, "The swing tracker stopped (the phone reclaimed graphics memory)."); }
 });
-Engines.ready.catch((e) => showError("The swing tracker could not start in this browser. Screenshot this and send it over. Details: " + (e?.message || e)));
+Engines.ready.catch((e) => showEngineError(e));
 
 function showError(msg) { const e = $("#errorBox"); e.textContent = msg; e.hidden = false; }
+function showEngineError(e, lead = "The swing tracker didn't finish downloading. This is usually a dropped signal.") {
+  const box = $("#errorBox");
+  box.innerHTML = `${esc(lead)} <button class="btn small primary" type="button" id="engineRetry">Try again</button><br><small>${esc(e?.message || e || "")}</small>`;
+  box.hidden = false; $("#engineRetry").onclick = () => location.reload();
+}
 function hideError() { $("#errorBox").hidden = true; }
 
 /* ---------- settings ---------- */
@@ -1932,20 +1982,26 @@ for (const id of ["view", "slowmo", "voiceOn"]) {
   el.onchange = () => { settings[id] = el.value; saveSettings(); summariseSettings(); };
 }
 $("#hand").onchange = async () => { const p = currentPlayer(); if (p && canEditPlayer(p.id)) { p.hand = $("#hand").value; await Store.savePlayer(p); } summariseSettings(); };
-$("#heightCm").onchange = async () => { const p = currentPlayer(); const v = +$("#heightCm").value; if (p && canEditPlayer(p.id) && v >= 120 && v <= 220) { p.heightCm = v; await Store.savePlayer(p); } summariseSettings(); };
+$("#heightCm").onchange = async () => {
+  const el = $("#heightCm"), p = currentPlayer(); let v = +el.value;
+  if (v >= 48 && v <= 90) { v = Math.round(v * 2.54); el.value = v; }   // typed inches
+  if (el.value !== "" && !(v >= 120 && v <= 220)) { el.value = p?.heightCm || ""; showError("Height is in cm, e.g. 178 for 5 ft 10."); }
+  else { hideError(); if (p && canEditPlayer(p.id) && v) { p.heightCm = v; await Store.savePlayer(p); } }
+  summariseSettings();
+};
 function heightFor(p) { const v = +$("#heightCm").value; return v >= 120 && v <= 220 ? v : (p?.heightCm || 178); }
 function summariseSettings() {
   const v = { auto: "angle auto", face: "face-on", dtl: "down the line" }[$("#view").value];
   const s = { "0": "", "1": " · normal speed" }[$("#slowmo").value] ?? ` · slo-mo ×${$("#slowmo").value}`;
-  $("#settingsSummary").textContent = `${v} · ${$("#hand").value === "L" ? "left" : "right"}-handed · ${$("#heightCm").value || 178} cm${s}`;
+  $("#settingsSummary").textContent = `${v} · ${$("#hand").value === "L" ? "left" : "right"}-handed · ${heightFor(currentPlayer())} cm${s}`;
 }
 
 /* ---------- voice ---------- */
 function primeVoice() { try { if ("speechSynthesis" in window) { const u = new SpeechSynthesisUtterance(""); speechSynthesis.speak(u); } } catch {} }
-function speak(text) {
+function speak(text, interrupt = true) {
   try {
     if (!("speechSynthesis" in window)) return false;
-    speechSynthesis.cancel();
+    if (interrupt) speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
     const v = speechSynthesis.getVoices().find((x) => /en-GB/i.test(x.lang)) || speechSynthesis.getVoices().find((x) => /^en/i.test(x.lang));
     if (v) u.voice = v;
@@ -1976,17 +2032,17 @@ function setWork(pct, step, note) {
   $$("#steps li").forEach((li) => { const i = order.indexOf(li.dataset.step), j = order.indexOf(step); li.dataset.state = i < j ? "done" : i === j ? "active" : ""; });
 }
 
-async function analyze(file) {
+async function analyze(file, over = {}) {
   hideError();
-  try { await Engines.ready; } catch { return; }
+  $("#intake").hidden = true; $("#results").hidden = true; $("#working").hidden = false;   // feedback even while the tracker downloads
+  $("#workTitle").textContent = "Reading your swing…"; setWork(0, "find", Engines.fast ? "" : "Loading the swing tracker…");
+  try { await Engines.ready; } catch (e) { $("#working").hidden = true; $("#intake").hidden = false; showEngineError(e); return; }
   const p = currentPlayer();
   const opts = {
-    view: $("#view").value, hand: $("#hand").value, slow: +$("#slowmo").value, club: settings.club,
+    view: $("#view").value, hand: $("#hand").value, slow: over.slow ?? +$("#slowmo").value, club: settings.club,
     heightCm: heightFor(p),
   };
   state.opts = opts; state.file = file;
-  $("#intake").hidden = true; $("#results").hidden = true; $("#working").hidden = false;
-  $("#workTitle").textContent = "Reading your swing…"; setWork(0, "find", "");
   let lastDraw = 0;
   try {
     const result = await analyzeClip(file, opts, {
@@ -2000,7 +2056,10 @@ async function analyze(file) {
     state.cur = result.swings.reduce((bi, s, i) => (rank(s) > rank(result.swings[bi]) ? i : bi), 0);
     $("#working").hidden = true; $("#results").hidden = false;
     renderResults();
-    await saveSession(result.swings, opts);
+    const ok = await saveSession(result.swings, opts, over.extra);
+    if (ok && over.replace && canEditPlayer(over.replace.pid)) {   // replaces the live record instead of adding a second one
+      try { await Store.deleteSwing(over.replace.pid, over.replace.id); await updateStats(over.replace.pid); renderFixCard(curSwing()); } catch (e) { console.warn("live duplicate", e); }
+    }
     if (settings.voiceOn === "on") speak(spokenSummary(result.swings[state.cur]));
     window.__swingLab.last = exportAnalysis();
   } catch (e) {
@@ -2009,9 +2068,10 @@ async function analyze(file) {
     showError(e.message || String(e));
   }
 }
+function unlockVideo() { try { if (!video.getAttribute("src")) video.load(); } catch {} }   // load() during a tap lifts WebKit's gesture limits for good (Low Power Mode)
 for (const id of ["fileRec", "filePick"]) {
   const inp = $("#" + id);
-  inp.addEventListener("click", primeVoice);
+  inp.addEventListener("click", primeVoice); inp.addEventListener("click", unlockVideo);
   inp.onchange = () => { if (inp.files[0]) analyze(inp.files[0]); inp.value = ""; };
 }
 const pick = $("#pickBtn");
@@ -2383,10 +2443,17 @@ async function offerFile(blob, filename) {
     try { await dl.save({ filename, data: blob }); toast("Saved"); return; }
     catch (e) { if (e?.code === "declined") return; }
   }
-  // No save surface here: show it so it can be long-pressed.
-  const url = URL.createObjectURL(blob);
+  // No save surface here: show it, with the share sheet (iPhone: Save Video / Save Image) or a download link.
+  const url = URL.createObjectURL(blob), isVid = blob.type.startsWith("video");
+  if (offerFile.url) URL.revokeObjectURL(offerFile.url); offerFile.url = url;
+  const file = new File([blob], filename, { type: blob.type });
+  const canShare = !window.claude && !!navigator.canShare?.({ files: [file] });
   const out = $("#coachOut"); out.hidden = false;
-  out.innerHTML = blob.type.startsWith("video") ? `<video src="${url}" controls playsinline style="width:100%;border-radius:10px"></video><p class="note">Press and hold the video to save it.</p>` : `<img src="${url}" alt="Swing card" style="width:100%;border-radius:10px"><p class="note">Press and hold the image to save it.</p>`;
+  out.innerHTML = (isVid ? `<video src="${url}" controls playsinline style="width:100%;border-radius:10px"></video>` : `<img src="${url}" alt="Swing card" style="width:100%;border-radius:10px">`)
+    + `<div class="row">${canShare ? `<button class="btn primary" type="button" id="shareFile">${isVid ? "Save or send video" : "Save or send image"}</button>` : `<a class="btn" href="${url}" download="${esc(filename)}">Download</a>`}</div>`
+    + (isVid ? "" : `<p class="note">Or press and hold the image to save it.</p>`);
+  const b = $("#shareFile");
+  if (b) b.onclick = () => navigator.share({ files: [file] }).catch((e) => { if (e?.name !== "AbortError") toast("Could not open sharing here"); });   // share first, no await before it
 }
 function roundRect(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
 async function shareCard() {
@@ -2416,7 +2483,7 @@ async function shareCard() {
   if (fix) { g.fillStyle = "#ff6b4f"; g.fillText("Working on: " + CHECKS[fix.id].name, 300, 1195); }
   g.fillStyle = "#8fa198"; g.font = "500 24px 'Instrument Sans', sans-serif"; g.fillText("Body tracking from one phone camera · honest scoring", 48, 1290);
   const blob = await new Promise((res) => c.toBlob(res, "image/png"));
-  await offerFile(blob, `swing-${new Date().toISOString().slice(0, 10)}.png`);
+  await offerFile(blob, `swing-${localDay()}.png`);
 }
 async function shareClip() {
   const s = curSwing(), R = state.result;
@@ -2451,7 +2518,7 @@ async function shareClip() {
     });
     video.pause(); rec.stop(); await done;
     const type = (rec.mimeType || mime || "video/webm").split(";")[0];
-    await offerFile(new Blob(chunks, { type }), `swing-${new Date().toISOString().slice(0, 10)}.${type.includes("mp4") ? "mp4" : "webm"}`);
+    await offerFile(new Blob(chunks, { type }), `swing-${localDay()}.${type.includes("mp4") ? "mp4" : "webm"}`);
   } catch (e) { console.error(e); toast("Could not record the clip"); }
   finally { ui.recording = false; btn.disabled = false; btn.innerHTML = label; video.playbackRate = ui.slow ? 0.3 : 1; }
 }
@@ -2466,8 +2533,13 @@ const Store = {
   local: lsGet("swinglab:v2", { players: {}, swings: {}, coach: {}, rounds: {} }),
   flush() {
     if (lsSet("swinglab:v2", this.local)) return;
-    const lite = { ...this.local, swings: Object.fromEntries(Object.entries(this.local.swings).map(([k, l]) => [k, l.map(({ thumbs, ...r }) => r)])) };
-    if (!lsSet("swinglab:v2", lite)) throw new Error("Could not save in this browser");
+    // Full: drop the stills of the oldest swings first (in memory too, so it doesn't repeat every save). Scores stay.
+    const pics = Object.values(this.local.swings).flat().filter((s) => s.thumbs && Object.keys(s.thumbs).length).sort((a, b) => a.at - b.at);
+    while (pics.length) {
+      for (const s of pics.splice(0, Math.max(5, Math.ceil(pics.length / 4)))) delete s.thumbs;
+      if (lsSet("swinglab:v2", this.local)) { if (!this.trimmed) { this.trimmed = true; toast("Storage is nearly full, so photos of your oldest swings were removed. Scores are kept.", 6000); } return; }
+    }
+    throw Object.assign(new Error("Could not save in this browser"), { code: "quota_exceeded" });
   },
   async init() {
     try {
@@ -2562,7 +2634,7 @@ function swingRecord(s, opts, sessionId, extra = {}) {
   return {
     at: Date.now(), session: sessionId, club: opts.club, view: s.view, hand: opts.hand, score: s.total.score, partial: !!s.total.partial,
     quality: s.quality.level, tempo: s.ev.tempo.ok ? { back: +s.ev.tempo.back.toFixed(3), down: +s.ev.tempo.down.toFixed(3) } : null,
-    checks, fix: pickFix(s.checks, s.view)?.id || null, tags: s.tags || [], thumbs: s.thumbs, ...extra,
+    checks, fix: pickFix(s.checks, s.view)?.id || null, tags: s.tags || [], thumbs: s.thumbs?.top ? { top: s.thumbs.top } : {}, ...extra,
   };
 }
 async function saveSession(swings, opts, extra) {
@@ -2574,6 +2646,13 @@ async function saveSession(swings, opts, extra) {
     for (const s of swings) { s.savedId = await Store.addSwing(pid, swingRecord(s, opts, sessionId, extra)); s.savedPid = pid; }
     await updateStats(pid);
     saved = true;
+    if (Store.mode === "local" && !window.claude?.use) {
+      if (navigator.standalone) try { navigator.storage?.persist?.().catch(() => {}); } catch {}
+      if (navigator.standalone === false && !lsGet("swinglab:a2hsTip", false)) {
+        lsSet("swinglab:a2hsTip", true);
+        setTimeout(() => toast("Tip: Safari clears saved swings if you skip a week. Share › Add to Home Screen keeps them. Already have swings? Progress › Export first, then Import in the Home Screen app.", 9000), 3200);
+      }
+    }
     toast(`Saved ${swings.length} swing${swings.length > 1 ? "s" : ""} to ${players.find((x) => x.id === pid)?.id === Store.me ? "your" : (players.find((x) => x.id === pid)?.name || "their") + "’s"} progress`);
   } catch (e) {
     console.error(e);
@@ -2647,9 +2726,13 @@ function lineChart(points, { target = null, yMin, yMax, invert = false, fmt = (v
   const last = points[n - 1];
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img">${g}${line}${dots}<text x="${x(n - 1)}" y="${y(last.v) - 12}" text-anchor="middle" style="fill:var(--ink);font-weight:500">${esc(fmt(last.v))}</text>${labels}</svg>`;
 }
+const localDay = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 function sessions(list) {
   const map = new Map();
-  for (const s of [...list].reverse()) { if (!map.has(s.session)) map.set(s.session, { id: s.session, at: s.at, swings: [] }); map.get(s.session).swings.push(s); }
+  for (const s of [...list].reverse()) {   // live-coach swings are saved one by one: group them by day
+    const key = s.live ? "live-" + new Date(s.at).toDateString() : s.session;
+    if (!map.has(key)) map.set(key, { id: key, at: s.at, swings: [] }); map.get(key).swings.push(s);
+  }
   return [...map.values()].map((g) => {
     const sc = g.swings.map((s) => s.score).filter(Number.isFinite);
     const med = median(sc), sd = sc.length > 1 ? Math.sqrt(mean(sc.map((v) => (v - mean(sc)) ** 2))) : 0;
@@ -2661,9 +2744,13 @@ async function renderProgress() {
   const p = currentPlayer();
   const mine = canEditPlayer(currentPid);
   $("#goalTitle").textContent = (p?.id === Store.me ? "Your" : (p?.name || "Golfer") + "’s") + " road to 90";
-  $("#storeNote").textContent = Store.mode === "db" ? "Synced to this lab" : "Saved in this browser only";
+  const safariTab = !window.claude?.use && navigator.standalone === false;   // iPhone/iPad Safari tab, not the Home Screen app
+  $("#storeNote").textContent = Store.mode === "db" ? "Synced to this lab" : safariTab
+    ? "Saved in Safari on this phone. Safari deletes it if you don't open Swing Lab for about a week: Export to keep a copy, or add Swing Lab to your Home Screen."
+    : "Saved on this device only";
+  if (safariTab && historyCache.length >= 10 && Date.now() - (settings.lastExport || 0) > 6048e5) $("#storeNote").textContent += " Back up now: Export swings below.";
   $("#roundFormWrap").hidden = !mine;
-  $("#rDate").value ||= new Date().toISOString().slice(0, 10);
+  $("#rDate").value ||= localDay();
   // rounds
   const rounds = roundsCache;
   if (rounds.length) {
@@ -2740,7 +2827,7 @@ $("#roundForm").onsubmit = async (e) => {
   };
   if (!r.course || !(r.score > 0)) return;
   await Store.addRound(currentPid, r); await updateStats(currentPid);
-  $("#rScore").value = ""; $("#roundFormWrap").open = false;
+  $("#rScore").value = ""; $("#rDate").value = localDay(); $("#roundFormWrap").open = false;
   toast(r.holes === 18 && r.score < 90 ? "Under 90. Massive." : "Round saved");
   renderProgress();
 };
@@ -2757,7 +2844,8 @@ async function renderCrew() {
       <span class="c">${esc(p.stats?.form ?? "–")}</span><span class="c">${esc(p.stats?.best ?? "–")}</span><span class="c hide-s">${esc(p.stats?.bestRound ?? "–")}</span></div>`).join("");
   $("#meName").value = players.find((p) => p.id === Store.me)?.name || "";
   $("#addGuestPanel").hidden = !Store.owner;
-  $("#crewNote").textContent = Store.mode === "db" ? "Share this lab with your crew (as Contributor or Editor) and they post their own swings here." : "Running locally: the board lives in this browser.";
+  $("#crewNote").textContent = Store.mode === "db" ? "Share this lab with your crew (as Contributor or Editor) and they post their own swings here." : "This board lives on this phone only. Add a mate above, pick them as Golfer, then analyse their clip or Import the file they Export.";
+  $("#v-crew h2").textContent = Store.mode === "db" ? "Crew leaderboard" : "Golfers on this phone";
 }
 $("#guestForm").onsubmit = async (e) => {
   e.preventDefault();
@@ -2852,11 +2940,12 @@ $("#chatForm").onsubmit = async (e) => {
 };
 
 /* Lesson mode: scan a long video, tick your swings, compare the start of the session with the end. */
+$("#lessonFile").addEventListener("click", unlockVideo);
 $("#lessonFile").onchange = async () => {
   const file = $("#lessonFile").files[0]; $("#lessonFile").value = "";
   if (!file) return;
   const out = $("#lessonOut");
-  try { await Engines.ready; } catch { return; }
+  try { await Engines.ready; } catch (e) { showEngineError(e); return; }
   const opts = { view: $("#view").value, hand: $("#hand").value, slow: +$("#slowmo").value, club: settings.club, heightCm: heightFor(currentPlayer()), coarseStep: 0.3 };
   // Lesson mode uses the same video player, so clear any swing results on the Swing tab.
   state.result = null; video.pause(); $("#results").hidden = true; $("#intake").hidden = false;
@@ -2949,16 +3038,16 @@ const CUES = {
 const FOCUS = [["auto", "My #1 fix"], ["tempo", "Rhythm"], ["posture", "Posture"], ["headHeight", "Head"], ["weightShift", "Weight shift"], ["hipSway", "Sway"], ["finishPos", "Finish"]];
 
 const Live = {
-  running: false, stream: null, facing: "environment", voice: true, focus: lsGet("swinglab:liveFocus", "auto"),
-  buf: [], snaps: [], state: "frame", stateT: 0, readyT: 0, swingT: 0, lastSay: 0, busy: false, fpsT: [], rec: null, chunks: [],
-  session: [], timeScale: +new URLSearchParams(location.search).get("liveslow") || 1,   // test hook: slowed fake camera
+  running: false, gen: 0, stream: null, facing: "environment", voice: true, focus: lsGet("swinglab:liveFocus", "auto"),
+  buf: [], snaps: [], state: "frame", stateT: 0, readyT: 0, stillT: 0, lostT: null, resetT: 0, swingT: 0, lastSay: 0, said: new Set(),
+  busy: false, fpsT: [], rec: null, clipT: 0, wake: null, session: [], timeScale: +new URLSearchParams(location.search).get("liveslow") || 1,   // test hook: slowed fake camera
 };
 const liveVideo = $("#liveVideo"), liveOverlay = $("#liveOverlay"), lctx = liveOverlay.getContext("2d");
 
-function liveSay(text, force = false) {
+function liveSay(text, force = false, interrupt = true) {
   const now = performance.now();
-  if (!Live.voice || (!force && now - Live.lastSay < 4500)) return;
-  Live.lastSay = now; speak(text);
+  if (!Live.voice || (!force && now - Live.lastSay < 4500)) return false;
+  Live.lastSay = now; return speak(text, interrupt);
 }
 function setStatus(state, text) {
   if (Live.state !== state) { Live.state = state; Live.stateT = performance.now(); }
@@ -2969,47 +3058,77 @@ function renderFocus() {
   $$("#liveFocus [data-f]").forEach((b) => b.onclick = () => { Live.focus = b.dataset.f; lsSet("swinglab:liveFocus", Live.focus); renderFocus(); });
 }
 
+function showLiveBig(score, cue) { $("#liveBigScore").textContent = score; $("#liveBigCue").textContent = cue; $("#liveBig").hidden = false; }
+function hideLiveBig() { $("#liveBig").hidden = true; }
+function holdAwake(gen) {   // must run before the first await (needs the tap); keeps a Home Screen copy awake on iOS 18.4+ and Android
+  try { navigator.wakeLock?.request("screen").then((l) => { if (gen === Live.gen) Live.wake = l; else l.release().catch(() => {}); }, () => {}); } catch {}
+}
+function releaseAwake() { try { Live.wake?.release().catch(() => {}); } catch {} Live.wake = null; }
+function fitLiveStage() {
+  const w = liveVideo.videoWidth, h = liveVideo.videoHeight;
+  if (!w || !h) return;
+  liveVideo.width = w; liveVideo.height = h;   // the pose library sizes video input from these attributes, not the stream
+  $("#liveStage").classList.toggle("landscape", w > h);
+}
+liveVideo.addEventListener("resize", fitLiveStage);   // iOS rotates the camera track when the phone turns
+function cameraError(e) {
+  const n = e?.name;
+  return n === "NotAllowedError" || n === "SecurityError" ? "No camera access. Tap Stop, then Live coach, and choose Allow. Still blocked? Tap aA (or the page icon) next to the address › Website Settings › Camera › Allow."
+    : n === "NotReadableError" || n === "AbortError" ? "The camera is busy. Close any app or call using it, then tap Stop and Live coach again."
+    : n === "NotFoundError" ? "No camera found on this device." : "The camera could not start. Tap Stop and try again.";
+}
 async function startLive() {
-  hideError();
-  $("#intake").hidden = true; $("#results").hidden = true; $("#live").hidden = false;
-  renderFocus(); primeVoice();
-  setStatus("frame", "Loading the tracker…");
-  try { await Engines.ready; } catch { setStatus("frame", "The tracker could not start."); return; }
-  try {
-    Live.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: Live.facing, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 60 } }, audio: false });
-  } catch (e) {
-    setStatus("frame", "Camera blocked. Allow camera access for this site in your browser settings, then try again.");
+  const gen = ++Live.gen, stale = () => gen !== Live.gen;   // Stop, a tab, a lock or a second tap cancels this start
+  holdAwake(gen);
+  hideError(); hideLiveBig();
+  $("#intake").hidden = true; $("#results").hidden = true; $("#live").hidden = false; $("#liveResume").hidden = true;
+  renderFocus(); primeVoice(); Live.said.clear();
+  setStatus("frame", "Starting the camera…");
+  let stream;   // camera first: the prompt shows while they still hold the phone, and the preview runs during the download
+  try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: Live.facing, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 60 } }, audio: false }); }
+  catch (e) { if (!stale()) { setStatus("frame", cameraError(e)); releaseAwake(); } return; }
+  if (stale()) { stream.getTracks().forEach((t) => t.stop()); return; }
+  Live.stream?.getTracks().forEach((t) => t.stop());
+  Live.stream = stream;
+  const loaded = waitEvent(liveVideo, "loadeddata", 3000);
+  liveVideo.srcObject = stream;
+  await liveVideo.play().catch(() => {});
+  if (liveVideo.readyState < 2) await loaded;
+  if (!Engines.fast) {
+    const onEng = ({ stage, pct }) => { if (!stale() && stage === "loading") setStatus("frame", `Loading the tracker ${Math.round(Math.min(1, pct / 0.2) * 100)}%… frame yourself meanwhile`); };
+    Engines.listeners.add(onEng);
+    try { await Engines.ready; } catch (e) { if (!stale()) { stopLive(); showEngineError(e); } return; }
+    finally { Engines.listeners.delete(onEng); }
+  }
+  if (stale()) return;   // stopLive already stopped this stream
+  fitLiveStage();
+  Engines.fast.reset();
+  Live.running = true; Live.buf = []; Live.lostT = null; Live.fpsT = []; Live.snaps.forEach((s) => s.bmp?.close?.()); Live.snaps = [];
+  setStatus("frame", "Prop me at hip height, 3–4 m away, then step in");
+  liveSay("Prop me up at hip height, about three or four metres away, then step into the frame so I can see all of you.", true);
+  liveTick(gen);
+}
+function stopLive(pause = false) {
+  Live.gen++; Live.running = false;
+  dropClip(); releaseAwake(); hideLiveBig();
+  Live.stream?.getTracks().forEach((t) => t.stop()); Live.stream = null; liveVideo.srcObject = null;
+  if (pause) {
+    $("#liveResume").hidden = false;
+    setStatus("frame", "Paused: the screen locked or you left the page. Tap Resume." + (navigator.standalone ? " To stop it locking: turn off Low Power Mode, then Settings › Display & Brightness › Auto-Lock › Never." : ""));
     return;
   }
-  liveVideo.srcObject = Live.stream;
-  await liveVideo.play().catch(() => {});
-  await waitEvent(liveVideo, "loadeddata", 3000);
-  // The pose library sizes video input from the element's width/height attributes, not the stream: set them.
-  liveVideo.width = liveVideo.videoWidth; liveVideo.height = liveVideo.videoHeight;
-  liveVideo.addEventListener("resize", () => { liveVideo.width = liveVideo.videoWidth; liveVideo.height = liveVideo.videoHeight; });
-  $("#liveStage").classList.toggle("landscape", liveVideo.videoWidth > liveVideo.videoHeight);
-  Engines.fast.reset();
-  Live.running = true; Live.buf = []; Live.snaps.forEach((s) => s.bmp?.close?.()); Live.snaps = [];
-  setStatus("frame", "Step into the frame, whole body in shot");
-  liveSay("Step into the frame so I can see all of you.", true);
-  liveTick();
-}
-function stopLive() {
-  Live.running = false;
-  try { Live.rec?.state === "recording" && Live.rec.stop(); } catch {}
-  Live.stream?.getTracks().forEach((t) => t.stop()); Live.stream = null;
   $("#live").hidden = true; $("#intake").hidden = false;
 }
 
-function liveTick() {
-  if (!Live.running) return;
-  const next = () => ("requestVideoFrameCallback" in liveVideo ? liveVideo.requestVideoFrameCallback(() => liveTick()) : requestAnimationFrame(() => liveTick()));
+function liveTick(gen = Live.gen) {
+  if (!Live.running || gen !== Live.gen) return;
+  const next = () => ("requestVideoFrameCallback" in liveVideo ? liveVideo.requestVideoFrameCallback(() => liveTick(gen)) : requestAnimationFrame(() => liveTick(gen)));
   if (Live.busy) { next(); return; }
   Live.busy = true;
   const t = performance.now() / 1000 / Live.timeScale;
   Engines.fast.detect(liveVideo, Math.round(t * 1000)).then((kp) => {
     Live.busy = false;
-    if (!Live.running) return;
+    if (!Live.running || gen !== Live.gen) return;
     Live.buf.push({ t, kp });
     while (Live.buf.length && t - Live.buf[0].t > 12) Live.buf.shift();
     snapshot(t);
@@ -3043,71 +3162,81 @@ function drawLive(kp) {
 }
 
 /* Swing detection on the live stream:
-   frame -> (whole body seen) -> settle -> (hands still and low for 0.4 s) -> ready -> (hands above shoulders) -> swing
-   -> (body still after the finish, or 3.5 s) -> analyse. */
+   frame -> (whole body seen) -> settle -> (hands still and low for 0.3 s) -> ready -> (hands above shoulders) -> swing
+   -> (body still after the finish, or 3.5 s) -> analyse. Brief tracking drop-outs are ridden out, not treated as leaving. */
+function framePrompt(why) { setStatus("frame", why); if (!Live.said.has(why) && liveSay(why + ".", false, false)) Live.said.add(why); }   // each prompt once per lost spell
 function liveStep(t, kp) {
   const W = liveVideo.videoWidth, H = liveVideo.videoHeight;
   const recent = Live.buf.filter((f) => f.kp && t - f.t <= 0.45);
   const ok = kp && isGolferPose(kp, W, H);
   const since = (performance.now() - Live.stateT) / 1000 / Live.timeScale;
   if (Live.state === "analyse" || Live.state === "cool") return;
+  if (Live.state === "swing" && t - Live.swingT > 3.5) { analyseLive(t); return; }   // ends even if they walked off after the swing
   if (!ok) {
-    if (Live.state === "swing") return;   // brief loss mid-swing: keep going
+    if (Live.state === "swing") return;                                     // brief loss mid-swing: keep going
+    Live.lostT ??= t;
+    if (Live.state !== "frame" && t - Live.lostT < 0.6) return;             // one bad frame: hold settle/ready (and the recorder)
+    if (Live.state === "frame" && since > 1.2 && t - Live.resetT > 1) { Engines.fast.reset(); Live.resetT = t; }   // let go of a bystander
     if (since > 1.2 || Live.state !== "frame") {
       const why = !kp ? "I can't see you" : Math.max(kp.lank.y, kp.rank.y) > 0.98 * H ? "Step back, I can't see your feet" : kp.nose.y < 0.02 * H ? "Step back, I can't see your head" : "Whole body in shot, please";
-      setStatus("frame", why); liveSay(why + ".");
+      if (Live.state === "ready") dropClip();
+      framePrompt(why);
     }
     return;
   }
+  Live.lostT = null;
   const torso = dist(mid(kp.lsho, kp.rsho), mid(kp.lhip, kp.rhip)) || 1;
   const bodyH = Math.max(kp.lank.y, kp.rank.y) - kp.nose.y;
   const hand = handCentre(kp), sho = mid(kp.lsho, kp.rsho), hip = mid(kp.lhip, kp.rhip);
   const handsHighNow = hand.y < sho.y;
-  const still = recent.length >= 4 && recent.every((f) => dist(handCentre(f.kp), hand) < 0.05 * bodyH);
+  const still = recent.length >= 3 && t - recent[0].t >= 0.3 && recent.every((f) => dist(handCentre(f.kp), hand) < 0.05 * bodyH);   // time-based: works down to ~5 fps
   if (Live.state === "frame") {
-    if (bodyH < 0.35 * H) { setStatus("frame", "Come a bit closer"); liveSay("Come a little closer."); return; }
-    setStatus("settle", "Set up to the ball"); liveSay("Got you. Set up when you're ready.", true); return;
+    if (bodyH < 0.35 * H) { framePrompt("Come a little closer"); return; }
+    Live.said.clear();
+    setStatus("settle", "Set up to the ball"); liveSay("Got you. Set up when you're ready.", true, false); return;
   }
   if (Live.state === "settle") {
     if (still && hand.y > hip.y - 0.3 * torso) {
-      setStatus("ready", "Ready. Swing when you like"); liveSay("Ready.", true);
-      Live.readyT = t; startClip();
+      setStatus("ready", "Ready. Swing when you like"); liveSay("Ready.", true, false);
+      Live.readyT = t; Live.stillT = t; startClip();
     }
     return;
   }
   if (Live.state === "ready") {
-    if (handsHighNow) { setStatus("swing", "Swinging…"); Live.swingT = t; return; }
-    if (!still && since > 6) { setStatus("settle", "Set up to the ball"); }   // they moved off; wait to settle again
-    if (since > 0.3 && still) Live.readyT = Math.max(Live.readyT, t - 1.0);   // keep the address window fresh while waiting
+    if (handsHighNow) { hideLiveBig(); setStatus("swing", "Swinging…"); Live.swingT = t; return; }
+    if (still) { Live.stillT = t; if (since > 0.3) Live.readyT = Math.max(Live.readyT, t - 1.0); }
+    if (t - Live.stillT > 3) { dropClip(); setStatus("settle", "Set up to the ball"); }        // 3 s with no pause: re-arm (a takeaway reaches hands-high in < 1 s)
+    else if (still && performance.now() - Live.clipT > 20000) startClip();                    // long wait at address: keep the clip short
     return;
   }
-  if (Live.state === "swing") {
-    const dt = t - Live.swingT;
-    if ((dt > 1.0 && still) || dt > 3.5) analyseLive(t);
-  }
+  if (Live.state === "swing" && t - Live.swingT > 1.0 && still) analyseLive(t);
 }
 
+function dropClip() {                       // discard a recording nobody will use; a pending stopClip still resolves
+  const r = Live.rec; Live.rec = null;
+  if (r?.state === "recording") { if (!r.onstop) r.ondataavailable = null; try { r.stop(); } catch {} }
+}
 function startClip() {
   try {
     if (!window.MediaRecorder || !Live.stream) return;
-    if (Live.rec?.state === "recording") Live.rec.stop();
+    dropClip();
     const mime = ["video/mp4", "video/webm;codecs=vp9", "video/webm"].find((m) => MediaRecorder.isTypeSupported(m)) || "";
-    Live.chunks = [];
-    Live.rec = new MediaRecorder(Live.stream, mime ? { mimeType: mime, videoBitsPerSecond: 6e6 } : undefined);
-    Live.rec.ondataavailable = (e) => e.data.size && Live.chunks.push(e.data);
-    Live.rec.start();
+    const chunks = [], rec = new MediaRecorder(Live.stream, mime ? { mimeType: mime, videoBitsPerSecond: 4e6 } : undefined);
+    rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);   // own array per recorder: a late blob can't leak into the next clip
+    rec.chunks = chunks; Live.rec = rec; Live.clipT = performance.now(); rec.start();
   } catch (e) { console.warn("recorder", e); Live.rec = null; }
 }
 function stopClip() {
   return new Promise((res) => {
     const r = Live.rec;
     if (!r || r.state !== "recording") return res(null);
-    r.onstop = () => { const type = (r.mimeType || "video/webm").split(";")[0]; res(new File(Live.chunks, `swing-${Date.now()}.${type.includes("mp4") ? "mp4" : "webm"}`, { type })); };
+    r.onstop = () => { const type = (r.mimeType || "video/webm").split(";")[0]; res(new File(r.chunks, `swing-${Date.now()}.${type.includes("mp4") ? "mp4" : "webm"}`, { type })); };
     r.stop();
   });
 }
 
 async function analyseLive(tEnd) {
+  const gen = Live.gen;
   setStatus("analyse", "Checking that swing…");
   const t0 = Live.readyT - 0.8;
   const frames = Live.buf.filter((f) => f.t >= t0 && f.t <= tEnd + 0.1).map((f) => ({ t: f.t, kp: f.kp }));
@@ -3125,8 +3254,10 @@ async function analyseLive(tEnd) {
       ev.slow = 1; ev.lead = opts.hand === "L" ? "r" : "l";
       const viewInfo = classifyView(series, ev.idx.address, opts.view);
       s = { series, ev, viewInfo, fps: fs, stride: 1, t0, t1: tEnd, crop: null };
-      s.quality = assessQuality(series, ev, W, H, viewInfo, fs, 1);
+      s.quality = assessQuality(series, ev, W, H, viewInfo, fs, 1, true);
       Object.assign(s, computeChecks(series, ev, opts, viewInfo));
+      // Live tracking on a phone often runs well under 60 fps: too few downswing frames to time rhythm honestly.
+      if ((fs < 45 || ev.downFrames < 9) && s.checks.tempo) { s.checks.tempo.measured = false; s.slowTrack = Math.round(fs); }
       if (s.quality.cameraMoved) for (const id of ["hipSway", "headSway", "weightShift", "headImpact", "stayBehind", "posture", "headHeight"]) if (s.checks[id]) s.checks[id].measured = false;
       s.total = scoreSwing(s.checks, s.view);
       if (s.quality.level === "poor" && s.total.score > 54) { s.total.score = 54; s.total.capped = "Tracking was poor, so the score is capped at 54."; }
@@ -3136,24 +3267,24 @@ async function analyseLive(tEnd) {
     else console.warn("live swing rejected:", findEvents.why, "frames", frames.length);
   } catch (e) { console.warn("live analysis", e); s = null; }
   const clip = await clipP;
+  const here = gen === Live.gen;        // false after Stop/tab/lock: still save, but don't talk or touch the stage
   if (!s) {
-    setStatus("cool", "Didn't catch that one");
-    liveSay("Didn't catch that one. Keep your whole body in shot and hold your finish.", true);
+    if (here) { setStatus("cool", "Didn't catch that one"); showLiveBig("–", "Didn't catch that one"); liveSay("Didn't catch that one. Keep your whole body in shot and hold your finish.", true); }
   } else {
-    s.clip = clip;
-    Live.session.unshift(s);
-    const said = liveCue(s);
-    setStatus("cool", `${s.total.score ?? "–"} · ${said}`);
-    liveSay(`${s.total.score ?? ""}. ${said}.`, true);
+    for (const x of Live.session) x.clip = null;   // only the newest swing has a Full analysis button
+    s.clip = clip; Live.session.unshift(s);
+    const said = liveCue(s), sc = s.total.score;
+    if (here) { setStatus("cool", `${sc ?? "–"} · ${said}`); showLiveBig(sc ?? "–", said); liveSay(sc == null ? `${said}.` : `${sc} out of 100. ${said}.`, true); }
     renderLiveResult(s);
     try { await saveSession([s], { ...opts, club: settings.club }, { live: true }); } catch {}
   }
-  setTimeout(() => { if (Live.running) { setStatus("settle", "Set up to the ball"); } }, 2500);
+  setTimeout(() => { if (Live.running && gen === Live.gen) setStatus("settle", "Set up to the ball"); }, 2500);
 }
 function liveCue(s) {
   const want = Live.focus !== "auto" ? Live.focus : pickFix(s.checks, s.view)?.id;
   const c = want && s.checks[want];
   if (want && c?.measured) return CUES[want][c.score >= 70 ? 1 : 0];
+  if (Live.focus === "tempo" && s.slowTrack) return "Rhythm needs the full analysis";
   if (Live.focus !== "auto") return `${CHECKS[Live.focus]?.short || "That"} not visible from this angle`;
   const good = pickStrength(s.checks, s.view);
   return good ? CUES[good.id][1] : "Solid swing";
@@ -3178,9 +3309,11 @@ function renderLiveResult(s) {
   $("#liveResult").innerHTML = `<div class="row spread"><span class="big-score">${esc(s.total.score ?? "–")}</span><span class="label">${esc(s.total.score == null ? "" : levelOf(s.total.score).name)}</span></div>
     ${fix ? `<p><b>${esc(CHECKS[fix.id].name)}</b>: ${esc(adviceFor(fix.id, fix.c, settings.club))}</p><p class="muted"><b>Drill:</b> ${esc(CHECKS[fix.id].drill)}</p>` : `<p>Nothing big stands out on that one.</p>`}
     ${s.quality.level !== "good" ? `<p class="note">${esc(s.quality.issues.map((x) => x.text).join(" "))}</p>` : ""}
+    ${s.slowTrack ? `<p class="note">Live tracking ran at about ${s.slowTrack} fps, too slow to time your rhythm.${s.clip ? " Tap Full analysis for rhythm." : ""}</p>` : ""}
+    ${s.notes?.length ? `<p class="note">${esc(s.notes.join(" "))}</p>` : ""}
     <div class="row">${s.clip ? `<button class="btn small primary" id="liveFull">Full analysis of this swing</button>` : ""}</div>`;
   const b = $("#liveFull");
-  if (b) b.onclick = () => { const f = s.clip; stopLive(); analyze(f); };
+  if (b) b.onclick = () => { const f = s.clip, rep = s.savedId ? { pid: s.savedPid, id: s.savedId } : null; stopLive(); analyze(f, { slow: 1, replace: rep, extra: { live: true } }); };
   $("#liveList").innerHTML = Live.session.slice(0, 12).map((x, i) => `<div class="hist" style="grid-template-columns:52px minmax(0,1fr) auto"><img alt="" src="${safeImg(x.thumbs?.top)}"><span><b>${esc(x.total.score ?? "–")}</b> <span class="muted">· swing ${Live.session.length - i}${pickFix(x.checks, x.view) ? " · " + esc(CHECKS[pickFix(x.checks, x.view).id].short) : ""}</span></span><span></span></div>`).join("");
 }
 
@@ -3189,10 +3322,15 @@ async function exportSwings() {
   await Store.ready;
   const data = { app: "swing-lab", version: 1, exportedAt: Date.now(), player: currentPlayer()?.name || "Me", swings: historyCache.map(({ id, ...s }) => s), rounds: roundsCache.map(({ id, ...r }) => r) };
   const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
-  const name = `swing-lab-${new Date().toISOString().slice(0, 10)}.json`;
+  const name = `swing-lab-${localDay()}.json`;
   if (IN_CLAUDE) return offerFile(blob, name);
+  const file = new File([blob], name, { type: "application/json" });
+  if (navigator.canShare?.({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: "Swing Lab swings" }); settings.lastExport = Date.now(); saveSettings(); return; }
+    catch (e) { if (e?.name === "AbortError") return; }
+  }
   const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
-  toast("Exported");
+  settings.lastExport = Date.now(); saveSettings(); toast("Saved to Downloads: " + name);
 }
 async function importSwings(file) {
   try {
@@ -3226,9 +3364,12 @@ $("#importFile").onchange = () => { const f = $("#importFile").files[0]; $("#imp
 /* ---------- wiring ---------- */
 if (CAN_CAMERA) {
   $("#liveBtn").onclick = startLive;
-  $("#liveStop").onclick = stopLive;
-  $("#liveFlip").onclick = async () => { Live.facing = Live.facing === "environment" ? "user" : "environment"; stopLive(); await startLive(); };
+  $("#liveStop").onclick = () => stopLive();          // not `= stopLive`: the click event would arrive as `pause`
+  $("#liveResume").onclick = startLive;               // a fresh tap: re-primes voice and the wake lock
+  $("#liveFlip").onclick = () => { Live.facing = Live.facing === "environment" ? "user" : "environment"; stopLive(); startLive(); };
   $("#liveVoice").onclick = (e) => { Live.voice = !Live.voice; e.currentTarget.setAttribute("aria-pressed", String(Live.voice)); e.currentTarget.textContent = Live.voice ? "Voice on" : "Voice off"; };
+  // Leaving the Swing tab ends the session (not inside switchTab: Live is not initialised when ui.js boots).
+  $$("[data-tab]").forEach((t) => t.addEventListener("click", () => { if (t.dataset.tab !== "swing" && !$("#live").hidden) stopLive(); }));
   if (location.hash === "#live") setTimeout(() => $("#liveBtn").focus(), 300);
 } else {
   $("#liveBtn").hidden = true;
@@ -3236,7 +3377,14 @@ if (CAN_CAMERA) {
 }
 $("#syncNote").textContent = IN_CLAUDE
   ? "Swings from the live coach on the web are saved on that phone. Export them there, then Import here to add them to your progress (and the crew board)."
-  : "Swings here are saved in this browser. Export them, then Import in Swing Lab inside Claude to add them to your progress and Coach Claude.";
-document.addEventListener("visibilitychange", () => { if (document.hidden && Live.running) stopLive(); });
+  : "Swings are saved in this browser only. Export keeps a backup (Safari clears sites you skip for a week) and moves swings to another phone or the Home Screen app. Import loads a file for whoever is picked as Golfer.";
+// Claude-only features (Coach Claude) can't run on the public website: hide them rather than lead nowhere.
+if (!IN_CLAUDE) {
+  $("#askCoach").hidden = true;                    // keep #coachOut: offerFile uses it
+  $("#speakBtn").classList.add("primary");
+  $("#chatForm").closest(".panel").hidden = true;
+  $("#addGuestPanel .note").textContent = "Add a friend, pick them as Golfer, and analyse their clip on this phone.";
+}
+document.addEventListener("visibilitychange", () => { if (document.hidden && !$("#live").hidden && (Live.running || Live.stream)) stopLive(true); });
 
 </script>
